@@ -1,0 +1,50 @@
+name: Gate ANPR
+version: "0.1.0"
+slug: gate_anpr
+description: Local number-plate recognition that opens the gate for approved vehicles
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:gate
+panel_title: Gate ANPR
+homeassistant_api: true
+services:
+  - mqtt:want
+backup: hot
+options:
+  camera_entity: camera.gate_cam_snapshots_clear
+  live_camera_entity: camera.gate_cam_fluent
+  trigger_entity: binary_sensor.gate_cam_vehicle
+  gate_entity: switch.sonoff_100219c178_2
+  gate_position_entity: ""
+  detector_model: yolo-v9-t-640-license-plate-end2end
+  ocr_model: cct-s-v2-global-model
+  ocr_threads: 2
+  max_frames: 6
+  capture_window: 8
+  frame_interval: 0.6
+  confirm_timeout: 10
+  retention_days: 30
+  create_dashboard: true
+  log_level: info
+schema:
+  camera_entity: match(^camera\.[a-z0-9_]+$)
+  live_camera_entity: match(^(camera\.[a-z0-9_]+)?$)
+  trigger_entity: match(^binary_sensor\.[a-z0-9_]+$)
+  gate_entity: match(^(cover|switch)\.[a-z0-9_]+$)
+  gate_position_entity: match(^((cover|binary_sensor)\.[a-z0-9_]+)?$)
+  detector_model: list(yolo-v9-t-384-license-plate-end2end|yolo-v9-t-512-license-plate-end2end|yolo-v9-t-640-license-plate-end2end)
+  ocr_model: list(cct-s-v2-global-model|cct-xs-v2-global-model)
+  ocr_threads: int(1,8)
+  max_frames: int(2,12)
+  capture_window: float(2,20)
+  frame_interval: float(0.2,3)
+  confirm_timeout: int(3,60)
+  retention_days: int(1,365)
+  create_dashboard: bool
+  log_level: list(debug|info|warning)

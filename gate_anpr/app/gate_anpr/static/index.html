@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gate ANPR</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --text:#1c1f23; --muted:#5f6670; --line:#dde1e6; --accent:#03a9f4;
+          --ok:#2e7d32; --warn:#b26a00; --bad:#c62828; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111315; --card:#1c1f22; --text:#e6e8ea; --muted:#9aa1a9; --line:#2e3338;
+            --ok:#66bb6a; --warn:#ffb74d; --bad:#ef5350; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:1100px; margin:0 auto; padding:16px; display:grid; gap:16px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  h1 { font-size:20px; margin:0; } h2 { font-size:16px; margin:0 0 12px; }
+  .row { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; }
+  .pill { padding:2px 10px; border-radius:999px; border:1px solid var(--line); font-size:13px; }
+  .granted { color:var(--ok); } .rejected, .error { color:var(--bad); } .approved { color:var(--warn); }
+  button, input, select { font:inherit; color:inherit; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:7px 14px; cursor:pointer; }
+  button.secondary { background:transparent; color:var(--text); border:1px solid var(--line); }
+  button:disabled { opacity:.5; cursor:default; }
+  input[type=text], input[type=number] { background:transparent; border:1px solid var(--line); border-radius:8px; padding:6px 10px; min-width:0; }
+  label.switch { display:flex; gap:8px; align-items:center; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  th { color:var(--muted); font-weight:500; font-size:13px; }
+  .plate { font:600 16px ui-monospace, Consolas, monospace; letter-spacing:1px; }
+  .thumb { width:120px; border-radius:6px; display:block; }
+  .plate-thumb { height:36px; border-radius:4px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:10px 16px; }
+  .scroll { overflow-x:auto; }
+  #snapshot { max-width:100%; border-radius:8px; margin-top:10px; }
+  #msg { min-height:1.4em; }
+  pre { white-space:pre-wrap; word-break:break-word; font-size:12px; color:var(--muted); margin:0; }
+  details summary { cursor:pointer; }
+</style>
+</head>
+<body>
+<main>
+  <section>
+    <div class="row" style="justify-content:space-between">
+      <h1>Gate ANPR</h1>
+      <div class="row">
+        <span class="pill" id="status">…</span>
+        <span class="pill" id="gate">…</span>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label class="switch"><input type="checkbox" id="recognition_enabled"> Recognition</label>
+      <label class="switch"><input type="checkbox" id="auto_open"> Automatic opening</label>
+      <button id="test">Test recognition (gate not operated)</button>
+      <button class="secondary" id="snap">Show camera + region</button>
+    </div>
+    <div id="msg" class="muted"></div>
+    <img id="snapshot" alt="" hidden>
+  </section>
+
+  <section>
+    <h2>Approved registrations</h2>
+    <form id="add" class="row">
+      <input type="text" id="plate" placeholder="Registration e.g. ABC123" maxlength="10" required autocomplete="off" style="text-transform:uppercase">
+      <input type="text" id="label" placeholder="Vehicle / owner" maxlength="60">
+      <button type="submit">Add</button>
+    </form>
+    <p class="muted">Matching is exact after removing spaces and dashes. Nothing similar is ever accepted.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Registration</th><th>Vehicle / owner</th><th>Enabled</th><th></th></tr></thead>
+      <tbody id="plates"></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <div class="row" style="justify-content:space-between">
+      <h2>Access history</h2>
+      <select id="filter"><option value="">All</option><option value="1">Granted</option><option value="0">Not granted</option></select>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr><th>Time</th><th>Image</th><th>Registration</th><th>Result</th><th>Conf.</th><th>Details</th></tr></thead>
+      <tbody id="events"></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Recognition settings</h2>
+    <form id="settings" class="grid"></form>
+    <div class="row" style="margin-top:12px"><button form="settings" type="submit">Save settings</button></div>
+  </section>
+
+  <section>
+    <h2>Diagnostics</h2>
+    <pre id="diag"></pre>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const LABELS = {
+  min_confidence: ["Minimum OCR confidence", "%"], min_consistent: ["Matching frames required", ""],
+  cooldown: ["Opening cooldown", "s"], min_plate_width: ["Minimum plate width", "px"],
+  region_left: ["Region left", "%"], region_top: ["Region top", "%"],
+  region_right: ["Region right", "%"], region_bottom: ["Region bottom", "%"],
+};
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const cls = (r) => r === "granted" ? "granted" : r.startsWith("approved") ? "approved" : "rejected";
+
+async function api(path, method = "GET", body) {
+  const res = await fetch(path, {method, headers: {"Content-Type": "application/json"},
+                                  body: body === undefined ? undefined : JSON.stringify(body)});
+  if (!res.ok) throw new Error(await res.text() || res.statusText);
+  return res.headers.get("content-type")?.includes("json") ? res.json() : res;
+}
+function say(text, bad) { $("msg").textContent = text; $("msg").style.color = bad ? "var(--bad)" : ""; }
+
+let settingsBuilt = false;
+async function refresh() {
+  const s = await api("api/state");
+  $("status").textContent = `Status: ${s.status}`;
+  const d = s.diagnostics;
+  $("gate").textContent = d.home_assistant_connected ? "Home Assistant connected" : "Home Assistant disconnected";
+  $("gate").className = "pill " + (d.home_assistant_connected ? "granted" : "rejected");
+  $("recognition_enabled").checked = s.settings.recognition_enabled;
+  $("auto_open").checked = s.settings.auto_open;
+  if (!settingsBuilt) {
+    $("settings").innerHTML = Object.entries(LABELS).map(([k, [name, unit]]) => {
+      const [lo, hi] = s.limits[k];
+      return `<label>${name}${unit ? ` (${unit})` : ""}<br><input type="number" name="${k}" min="${lo}" max="${hi}" step="1" required></label>`;
+    }).join("");
+    settingsBuilt = true;
+  }
+  for (const k of Object.keys(LABELS)) if (document.activeElement?.name !== k) $("settings").elements[k].value = s.settings[k];
+  $("plates").innerHTML = s.plates.map((p) => `<tr>
+      <td class="plate">${esc(p.plate)}</td><td>${esc(p.label)}</td>
+      <td><input type="checkbox" data-toggle="${esc(p.plate)}" data-label="${esc(p.label)}" ${p.enabled ? "checked" : ""} aria-label="Enable ${esc(p.plate)}"></td>
+      <td><button class="secondary" data-del="${esc(p.plate)}">Remove</button></td></tr>`).join("")
+    || `<tr><td colspan="4" class="muted">No approved registrations yet.</td></tr>`;
+  $("diag").textContent = JSON.stringify({diagnostics: d, engine: s.engine}, null, 2);
+  await loadEvents();
+}
+
+async function loadEvents() {
+  const rows = await api(`api/events?limit=100&granted=${$("filter").value}`);
+  $("events").innerHTML = rows.map((e) => {
+    const v = e.detail.verdict || {};
+    const t = new Date(e.ts * 1000).toLocaleString();
+    const img = e.image ? `<a href="images/${e.image}" target="_blank"><img class="thumb" src="images/${e.image}" alt="Detection ${e.id}" loading="lazy"></a>` : "";
+    const plateImg = e.plate_image ? `<br><img class="plate-thumb" src="images/${e.plate_image}" alt="">` : "";
+    return `<tr><td>${esc(t)}${e.detail.test ? " <span class=muted>(test)</span>" : ""}</td><td>${img}</td>
+      <td class="plate">${esc(e.plate || "–")}${plateImg}</td>
+      <td class="${cls(e.result)}">${esc(e.result)}<br><span class="muted">${esc(e.reason)}</span></td>
+      <td>${e.confidence ?? "–"}</td>
+      <td><details><summary class="muted">${v.votes ?? 0}/${e.detail.frames} frames</summary><pre>${esc(JSON.stringify(e.detail, null, 1))}</pre></details></td></tr>`;
+  }).join("") || `<tr><td colspan="6" class="muted">No detections yet.</td></tr>`;
+}
+
+$("add").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    const r = await api("api/plates", "POST", {plate: $("plate").value, label: $("label").value, enabled: true});
+    say(`Approved ${r.plate}`); $("plate").value = ""; $("label").value = ""; refresh();
+  } catch (err) { say(err.message, true); }
+});
+$("plates").addEventListener("click", async (ev) => {
+  const del = ev.target.dataset.del, tog = ev.target.dataset.toggle;
+  try {
+    if (del && confirm(`Remove ${del} from the approved list?`)) { await api(`api/plates/${encodeURIComponent(del)}`, "DELETE", {}); say(`Removed ${del}`); }
+    if (tog) { await api("api/plates", "POST", {plate: tog, label: ev.target.dataset.label, enabled: ev.target.checked}); say(`${tog} ${ev.target.checked ? "enabled" : "disabled"}`); }
+    refresh();
+  } catch (err) { say(err.message, true); }
+});
+for (const key of ["recognition_enabled", "auto_open"]) {
+  $(key).addEventListener("change", async (ev) => {
+    if (key === "auto_open" && ev.target.checked && !confirm("Enable automatic gate opening for approved registrations?")) { ev.target.checked = false; return; }
+    try { await api("api/settings", "POST", {[key]: ev.target.checked}); say("Saved"); } catch (err) { say(err.message, true); refresh(); }
+  });
+}
+$("settings").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const body = Object.fromEntries([...new FormData(ev.target)].map(([k, v]) => [k, Number(v)]));
+  try { await api("api/settings", "POST", body); say("Settings saved"); refresh(); } catch (err) { say(err.message, true); }
+});
+$("test").addEventListener("click", async () => {
+  $("test").disabled = true; say("Capturing and recognising…");
+  try { const e = await api("api/test", "POST", {}); say(`Test: ${e.plate || "no plate"} → ${e.result} (${e.reason})`); refresh(); }
+  catch (err) { say(err.message, true); } finally { $("test").disabled = false; }
+});
+$("snap").addEventListener("click", async () => {
+  say("Fetching camera snapshot…");
+  try {
+    const res = await api("api/snapshot");
+    $("snapshot").src = URL.createObjectURL(await res.blob()); $("snapshot").hidden = false;
+    $("snapshot").alt = "Camera snapshot with the detection region outlined";
+    say("Detection region outlined in orange.");
+  } catch (err) { say(err.message, true); }
+});
+$("filter").addEventListener("change", loadEvents);
+refresh().catch((err) => say(err.message, true));
+setInterval(() => refresh().catch(() => {}), 15000);
+</script>
+</body>
+</html>

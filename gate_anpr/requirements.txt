@@ -1,0 +1,9 @@
+fast-alpr==0.4.0
+fast-plate-ocr==1.1.0
+open-image-models==0.6.0
+onnxruntime==1.31.1
+opencv-python-headless==5.0.0.93
+numpy==2.5.4
+aiohttp==3.14.5
+aiomqtt==2.5.1
+paho-mqtt==2.2.0

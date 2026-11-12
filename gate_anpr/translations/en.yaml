@@ -1,0 +1,46 @@
+configuration:
+  camera_entity:
+    name: Recognition camera
+    description: High-resolution snapshot entity used for plate reading (Reolink "Snapshots Clear").
+  live_camera_entity:
+    name: Live view camera
+    description: Camera shown live on the dashboard. Leave empty to use the recognition camera.
+  trigger_entity:
+    name: Vehicle detection sensor
+    description: Reolink vehicle detection binary sensor. Recognition starts when it turns on.
+  gate_entity:
+    name: Gate OPEN control
+    description: Relay switch wired to the gate controller's dedicated OPEN input, or a cover entity. Never a toggle input.
+  gate_position_entity:
+    name: Gate position sensor (optional)
+    description: Cover or binary sensor (on = open). When set, the gate is only commanded while it reports closed.
+  detector_model:
+    name: Plate detector model
+    description: Larger input sizes find smaller (more distant) plates but use more CPU.
+  ocr_model:
+    name: Plate OCR model
+    description: cct-s is more accurate, cct-xs is faster.
+  ocr_threads:
+    name: Recognition CPU threads
+    description: CPU threads the low-priority recognition process may use.
+  max_frames:
+    name: Maximum frames per detection
+    description: Frames captured per vehicle detection before giving up.
+  capture_window:
+    name: Capture window (seconds)
+    description: Longest time spent capturing after a vehicle detection.
+  frame_interval:
+    name: Frame interval (seconds)
+    description: Minimum time between captured frames.
+  confirm_timeout:
+    name: Gate confirmation timeout (seconds)
+    description: How long to wait for the gate control to confirm the OPEN command.
+  retention_days:
+    name: History retention (days)
+    description: Access history and detection images older than this are deleted.
+  create_dashboard:
+    name: Create dashboard
+    description: Create the Gate ANPR dashboard on first start. An existing dashboard is never overwritten.
+  log_level:
+    name: Log level
+    description: Amount of detail in the app log.
