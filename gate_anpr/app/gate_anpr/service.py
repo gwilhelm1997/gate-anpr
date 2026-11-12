@@ -242,12 +242,7 @@ class GateAnpr:
                 await self.engine.start()  # recover from a crashed or failed worker
             if not self.engine.ready:
                 raise RuntimeError(self.engine.last_error or "recognition engine is not ready")
-            reader = self._streams.get(lane.id)
-            if reader and reader.healthy():
-                source = "video stream"
-                await self._stream_frames(reader, started, region, rules, frames, jpegs, timings)
-            else:
-                await self._snapshot_frames(lane.camera_entity, started, region, rules, frames, jpegs, timings)
+            source = await self._collect_frames(lane, started, region, rules, frames, jpegs, timings)
             verdict = evaluate(sorted(frames, key=lambda f: f.t), rules)
         except Exception as err:  # noqa: BLE001 - every failure is recorded and fails closed
             error = f"{type(err).__name__}: {err}"
@@ -314,37 +309,21 @@ class GateAnpr:
             _LOG.warning("Could not fire %s event: %s", EVENT_TYPE, err)
         return event
 
-    async def _stream_frames(self, reader, started, region, rules, frames, jpegs, timings) -> None:
-        """Frames straight from the live video: no snapshot wait. Full decoding starts at the next keyframe."""
-        latest = reader.next_frame(-1, 0)
-        seq = latest[1] if latest else 0  # only frames decoded after the trigger
-        reader.activate()
-        try:
-            while len(frames) < self.options.max_frames and self._clock() - started < self.options.capture_window:
-                item = await asyncio.to_thread(reader.next_frame, seq, 3.0)
-                if item is None:
-                    raise RuntimeError("video stream stalled")
-                shot_at, seq, image = item
-                width, height, reads, ms = await self.engine.recognise(image, region)
-                frames.append(Frame(len(frames), shot_at - started, width, height, reads))
-                jpegs.append(image)
-                timings.append(ms)
-                if evaluate(frames, rules).accepted:
-                    break
-        finally:
-            reader.deactivate()
-
-    async def _snapshot_frames(self, camera, started, region, rules, frames, jpegs, timings) -> None:
-        """Snapshots fetched by staggered grabbers while earlier frames are read; judged in capture order."""
+    async def _collect_frames(self, lane, started, region, rules, frames, jpegs, timings) -> str:
+        """Snapshots start at once; if the gate has a video stream it connects in parallel and, once
+        frames flow, takes over (no ~1.2 s wait per frame). Frames are judged in capture order."""
+        reader = self._streams.get(lane.id)
+        seq = reader.activate() if reader else 0
         queue: asyncio.Queue = asyncio.Queue()
         done = asyncio.Event()
+        used_stream = False
 
         async def grabber(offset: float) -> None:
             await asyncio.sleep(offset)
             while not done.is_set() and self._clock() - started < self.options.capture_window:
                 shot_at = self._clock()
                 try:
-                    await queue.put((shot_at, await self.ha.camera_image(camera)))
+                    await queue.put((shot_at, await self.ha.camera_image(lane.camera_entity)))
                 except Exception as err:  # noqa: BLE001 - handed to the reader, fails closed
                     await queue.put((shot_at, err))
                     return
@@ -355,18 +334,31 @@ class GateAnpr:
         grabbers = [asyncio.create_task(grabber(i * stagger)) for i in range(parallel)]
         try:
             while len(frames) < self.options.max_frames:
-                remaining = self.options.capture_window - (self._clock() - started)
-                if remaining <= 0 and queue.empty():
+                if self._clock() - started >= self.options.capture_window and queue.empty():
                     break
-                try:
-                    shot_at, jpeg = await asyncio.wait_for(queue.get(), max(remaining, 0) + 2)
-                except asyncio.TimeoutError:
-                    break
-                if isinstance(jpeg, Exception):
-                    raise jpeg
-                width, height, reads, ms = await self.engine.recognise(jpeg, region)
+                item = reader.latest(seq) if reader else None
+                if item is not None:
+                    shot_at, seq, image = item
+                    if not used_stream:
+                        used_stream = True
+                        for task in grabbers:  # the video is faster: stop asking for snapshots
+                            task.cancel()
+                        while not queue.empty():
+                            queue.get_nowait()
+                else:
+                    try:
+                        shot_at, image = await asyncio.wait_for(queue.get(), 0.05 if reader else 3)
+                    except asyncio.TimeoutError:
+                        if not reader and self._clock() - started >= self.options.capture_window:
+                            break
+                        continue
+                    if isinstance(image, Exception):
+                        if reader and reader.connected:
+                            continue  # the stream can carry on
+                        raise image
+                width, height, reads, ms = await self.engine.recognise(image, region)
                 frames.append(Frame(len(frames), shot_at - started, width, height, reads))
-                jpegs.append(jpeg)
+                jpegs.append(image)
                 timings.append(ms)
                 if evaluate(sorted(frames, key=lambda f: f.t), rules).accepted:
                     break
@@ -374,6 +366,9 @@ class GateAnpr:
             done.set()
             for task in grabbers:
                 task.cancel()
+            if reader:
+                reader.deactivate()
+        return "video stream" if used_stream else "snapshots"
 
     async def _save_images(self, event, jpegs, verdict, region) -> None:
         if not jpegs:

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.0
+
+- Video stream is now on demand: it connects only when a vehicle is detected (snapshots start at the
+  same moment; the stream takes over as soon as frames flow) and disconnects 30 s after the last
+  vehicle. No traffic or decoding while no vehicle is present.
+
 ## 2.2.1
 
 - Dashboard: "All gates" overview tab with every gate's live camera, switches and last result.

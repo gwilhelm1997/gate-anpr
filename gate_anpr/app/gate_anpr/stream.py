@@ -1,6 +1,7 @@
-"""Always-connected RTSP reader: keyframes only while idle (cheap), every frame during a session.
+"""On-demand RTSP reader: connects when a vehicle is detected, disconnects after a quiet period.
 
-Frames are ready the moment a vehicle is detected, so recognition never waits ~1.2 s for a 4K snapshot.
+No traffic or decoding while no vehicle is present. During a session every frame is decoded, starting
+at the first keyframe (P-frames need every earlier frame, so earlier ones would be smeared).
 """
 
 import logging
@@ -12,6 +13,7 @@ import av
 
 _LOG = logging.getLogger(__name__)
 _CREDENTIALS = re.compile(r"//[^@/]+@")
+LINGER = 30.0  # stay connected this long after a session, for the next vehicle
 
 
 def redact(url: str) -> str:
@@ -19,13 +21,16 @@ def redact(url: str) -> str:
 
 
 class StreamReader:
-    def __init__(self, url: str, name: str):
+    def __init__(self, url: str, name: str, linger: float = LINGER):
         self.url = url
         self.name = name
+        self.linger = linger
         self._cond = threading.Condition()
         self._frame = None  # (monotonic time, seq, BGR ndarray)
         self._seq = 0
         self._active = 0
+        self._released = 0.0
+        self._wake = threading.Event()
         self._stop = threading.Event()
         self.connected = False
         self.last_error: str | None = None
@@ -33,21 +38,28 @@ class StreamReader:
         self._thread.start()
 
     def info(self) -> dict:
-        age = time.monotonic() - self._frame[0] if self._frame else None
-        return {"connected": self.connected, "frame_age_s": round(age, 1) if age is not None else None,
-                "error": self.last_error, "source": redact(self.url)}
+        state = "streaming" if self.connected else ("connecting" if self._active else "idle")
+        return {"state": state, "connected": self.connected, "error": self.last_error, "source": redact(self.url)}
 
-    def healthy(self) -> bool:
-        # Idle decoding still yields a keyframe every few seconds; older means the stream is stuck.
-        return self.connected and self._frame is not None and time.monotonic() - self._frame[0] < 10
-
-    def activate(self) -> None:
+    def activate(self) -> int:
+        """Start (or keep) streaming. Returns the sequence number to read after."""
         with self._cond:
             self._active += 1
+            seq = self._seq
+        self._wake.set()
+        return seq
 
     def deactivate(self) -> None:
         with self._cond:
             self._active = max(0, self._active - 1)
+            self._released = time.monotonic()
+
+    def latest(self, after_seq: int):
+        """Non-blocking: the newest frame decoded after `after_seq`, or None."""
+        with self._cond:
+            if self._frame and self._frame[1] > after_seq:
+                return self._frame
+        return None
 
     def next_frame(self, after_seq: int, timeout: float):
         """Blocking: the newest frame decoded after `after_seq`, or None on timeout."""
@@ -64,42 +76,49 @@ class StreamReader:
 
     def close(self) -> None:
         self._stop.set()
+        self._wake.set()
         with self._cond:
             self._cond.notify_all()
 
+    def _wanted(self) -> bool:
+        with self._cond:
+            return self._active > 0 or time.monotonic() - self._released < self.linger
+
     def _run(self) -> None:
-        delay = 2
         while not self._stop.is_set():
-            try:
-                with av.open(self.url, options={"rtsp_transport": "tcp", "stimeout": "5000000",
-                                                "timeout": "5000000"}, timeout=10) as container:
-                    video = container.streams.video[0]
-                    video.thread_type = "AUTO"
-                    self.connected, self.last_error, delay = True, None, 2
-                    _LOG.info("%s: video stream connected (%s)", self.name, redact(self.url))
-                    full = False
-                    for packet in container.demux(video):
-                        if self._stop.is_set():
-                            return
-                        # Start full decoding only at a keyframe: P-frames need every earlier frame,
-                        # so switching mid-group would give smeared images until the next keyframe.
-                        if not self._active:
-                            full = False
-                        elif packet.is_keyframe:
-                            full = True
-                        wanted = "DEFAULT" if full else "NONKEY"
-                        if video.codec_context.skip_frame != wanted:
-                            video.codec_context.skip_frame = wanted
-                        for frame in packet.decode():
-                            image = frame.to_ndarray(format="bgr24")
-                            with self._cond:
-                                self._seq += 1
-                                self._frame = (time.monotonic(), self._seq, image)
-                                self._cond.notify_all()
-            except Exception as err:  # noqa: BLE001 - reconnect forever; sessions fall back to snapshots
-                self.last_error = redact(str(err))
-                _LOG.warning("%s: video stream error (%s); reconnecting in %ss", self.name, self.last_error, delay)
-            finally:
-                self.connected = False
-            self._stop.wait(delay)
-            delay = min(delay * 2, 60)
+            self._wake.wait()
+            self._wake.clear()
+            if self._stop.is_set():
+                return
+            while self._wanted() and not self._stop.is_set():
+                try:
+                    self._stream()
+                except Exception as err:  # noqa: BLE001 - sessions fall back to snapshots
+                    self.last_error = redact(str(err))
+                    _LOG.warning("%s: video stream error (%s)", self.name, self.last_error)
+                    self._stop.wait(2)
+                finally:
+                    self.connected = False
+
+    def _stream(self) -> None:
+        with av.open(self.url, options={"rtsp_transport": "tcp", "stimeout": "5000000", "timeout": "5000000"},
+                     timeout=10) as container:
+            video = container.streams.video[0]
+            video.thread_type = "AUTO"
+            video.codec_context.skip_frame = "NONKEY"
+            self.connected, self.last_error = True, None
+            _LOG.info("%s: video stream connected", self.name)
+            started = False
+            for packet in container.demux(video):
+                if self._stop.is_set() or not self._wanted():
+                    _LOG.info("%s: video stream disconnected (idle)", self.name)
+                    return
+                if not started and packet.is_keyframe:
+                    started = True
+                    video.codec_context.skip_frame = "DEFAULT"
+                for frame in packet.decode():
+                    image = frame.to_ndarray(format="bgr24")
+                    with self._cond:
+                        self._seq += 1
+                        self._frame = (time.monotonic(), self._seq, image)
+                        self._cond.notify_all()
