@@ -66,7 +66,8 @@ def create_app(service, allowed_ips: set) -> web.Application:
 
     async def state(_):
         return web.json_response({
-            "lanes": [{**rt.lane.to_dict(), "status": rt.status} for rt in service.lanes.values()],
+            "lanes": [{**rt.lane.public(), "status": rt.status, "stream": service.stream_info(rt.lane.id)}
+                      for rt in service.lanes.values()],
             "limits": LIMITS,
             "choices": CHOICES,
             "diagnostics": service.diagnostics(),
@@ -99,7 +100,7 @@ def create_app(service, allowed_ips: set) -> web.Application:
             lane = await service.save_lane(body, lid)
         except ValueError as err:
             raise web.HTTPBadRequest(text=str(err)) from err
-        return web.json_response(lane.to_dict())
+        return web.json_response(lane.public())
 
     async def delete_lane(request):
         await service.delete_lane(lane_id(request))

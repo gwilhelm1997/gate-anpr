@@ -29,6 +29,26 @@ opening is logged with a registration and an image. Use it where any vehicle may
 
 Approved registrations apply to **all gates** unless you tick specific gates next to the plate.
 
+## Faster recognition with the video stream
+
+By default each frame is a 4K snapshot, which your camera takes about 1.2 s to deliver. Give a gate
+its camera's **video stream** (Edit gate → Video stream) and frames come straight from the live video:
+
+```
+rtsp://USER:PASSWORD@CAMERA-IP:554/Preview_01_main
+```
+
+- Enable RTSP on the camera first: Reolink app → camera → Settings → Network → Advanced →
+  Server settings → **RTSP** on. Use a camera user; a dedicated read-only user is best.
+- While no vehicle is present only keyframes are decoded (one every couple of seconds), so the CPU
+  load is small. On a vehicle trigger, full-rate decoding starts at the next keyframe.
+- For the quickest start, set the camera's **I-frame interval** to 1× frame rate (Reolink app →
+  Display/Stream settings → Clear → I-frame interval). That halves the wait for the next keyframe.
+- If the stream drops, the gate automatically uses snapshots and reconnects in the background.
+  The gate card shows which source is in use.
+- The address, including its password, is stored only in the app's private data. It's never shown
+  again in the panel and never logged.
+
 ## How it decides
 
 1. The Reolink **vehicle detection** sensor turns on.

@@ -16,6 +16,7 @@ _ENTITY = {
     "trigger_entity": re.compile(r"binary_sensor\.[a-z0-9_]+"),
     "gate_entity": re.compile(r"(cover|switch)\.[a-z0-9_]+"),
     "gate_position_entity": re.compile(r"((cover|binary_sensor)\.[a-z0-9_]+)?"),
+    "stream_url": re.compile(r"(rtsps?://[^\s]{3,300})?"),
 }
 CHOICES = {"direction": ("towards", "away"), "access": ("approved", "all")}
 LIMITS = {
@@ -46,6 +47,7 @@ class Lane:
     trigger_entity: str = ""
     gate_entity: str = ""
     gate_position_entity: str = ""
+    stream_url: str = ""  # optional RTSP stream (contains the camera password: never returned or logged)
     direction: str = "towards"  # vehicles drive towards the camera (plate grows) or away from it
     min_confidence: int = 90
     min_consistent: int = 2
@@ -100,6 +102,12 @@ class Lane:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    def public(self) -> dict:
+        """Safe to show: the stream URL is replaced by whether one is set."""
+        data = self.to_dict()
+        data["stream_configured"] = bool(data.pop("stream_url"))
+        return data
 
 
 class Store:

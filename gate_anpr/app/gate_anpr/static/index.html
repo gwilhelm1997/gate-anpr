@@ -117,6 +117,12 @@
     </label>
     <label>Recognition camera (high resolution)<input type="text" name="camera_entity" data-list="cameras" placeholder="Type to search…" autocomplete="off" spellcheck="false" required><div class="picker" hidden></div></label>
     <label>Live view camera (dashboard)<input type="text" name="live_camera_entity" data-list="cameras" placeholder="Same as recognition camera" autocomplete="off" spellcheck="false"><div class="picker" hidden></div></label>
+    <label style="grid-column:1/-1">Video stream for fast recognition (optional, recommended)
+      <input type="password" name="stream_url" autocomplete="off" spellcheck="false"
+             placeholder="rtsp://USER:PASSWORD@CAMERA-IP:554/Preview_01_main">
+      <span class="muted" id="stream-note">Frames come straight from the camera's video instead of ~1.2 s snapshots. Stored privately in the app; never shown again or logged.</span>
+    </label>
+    <label class="switch" style="grid-column:1/-1;flex-direction:row" id="stream-clear-row" hidden><input type="checkbox" name="stream_clear"> Remove the saved video stream</label>
     <label>Vehicle detection sensor<input type="text" name="trigger_entity" data-list="triggers" placeholder="Type to search…" autocomplete="off" spellcheck="false" required><div class="picker" hidden></div></label>
     <label>Gate OPEN control (relay or cover, never a toggle)<input type="text" name="gate_entity" data-list="gates" placeholder="Type to search…" autocomplete="off" spellcheck="false" required><div class="picker" hidden></div></label>
     <label>Gate position sensor (optional)<input type="text" name="gate_position_entity" data-list="positions" placeholder="None" autocomplete="off" spellcheck="false"><div class="picker" hidden></div></label>
@@ -168,6 +174,7 @@ function renderLanes() {
           <label class="switch"><input type="checkbox" data-set="auto_open" ${l.auto_open ? "checked" : ""}> Automatic opening</label>
         </div>
       </div>
+      <div class="muted">Frames: ${l.stream ? (l.stream.connected ? "<span class=granted>live video stream</span>" : `<span class=rejected>video stream down (${esc(l.stream.error || "connecting")}), using snapshots</span>`) : "snapshots (add a video stream for faster recognition)"}</div>
       <div class="muted">Camera ${esc(l.camera_entity)} · trigger ${esc(l.trigger_entity)} · gate ${esc(l.gate_entity)} · vehicles ${l.direction === "towards" ? "approach the camera" : "drive away from the camera"} · region ${l.region_left}–${l.region_right}% × ${l.region_top}–${l.region_bottom}%</div>
       <div class="row">
         <button data-act="test">Test recognition (gate not operated)</button>
@@ -231,6 +238,10 @@ async function openEditor(lane) {
   for (const [k, [lo, hi]] of Object.entries(state.limits)) { form.elements[k].min = lo; form.elements[k].max = hi; }
   for (const el of form.elements) if (el.name && !el.dataset.list && data[el.name] !== undefined) el.value = data[el.name];
   form.elements.id.value = lane ? lane.id : "";
+  form.elements.stream_url.value = "";
+  form.elements.stream_clear.checked = false;
+  form.elements.stream_url.placeholder = lane?.stream_configured ? "Saved — leave blank to keep it" : "rtsp://USER:PASSWORD@CAMERA-IP:554/Preview_01_main";
+  $("stream-clear-row").hidden = !lane?.stream_configured;
   $("editor-title").textContent = lane ? `Edit ${lane.name}` : "Add gate";
   $("editor").showModal();
 }
@@ -244,6 +255,9 @@ $("lane-form").addEventListener("submit", async (ev) => {
     body[input.name] = v;
   }
   for (const k of Object.keys(state.limits)) body[k] = Number(body[k]);
+  if (body.stream_clear) body.stream_url = "";
+  else if (!body.stream_url && Number(body.id)) delete body.stream_url;  // keep the saved stream
+  delete body.stream_clear;
   body.id = Number(body.id || 0);
   try { const l = await api("api/lanes", "POST", body); $("editor").close(); say(`Saved ${l.name}`); refresh(); }
   catch (err) { say(err.message, true); alert(err.message); }

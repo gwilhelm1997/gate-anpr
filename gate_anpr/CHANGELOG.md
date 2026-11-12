@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.0
+
+- Live video recognition: give a gate its camera's RTSP stream and frames come straight from the
+  video (no ~1.2 s snapshot per frame). While idle only keyframes are decoded, so CPU stays low; on a
+  vehicle trigger full decoding starts at the next keyframe. Falls back to snapshots automatically
+  if the stream is down. The stream address (with its password) is never shown again or logged.
+
 ## 2.1.0
 
 - Faster decisions: camera snapshots are fetched in parallel and overlap with recognition instead of

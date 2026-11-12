@@ -61,10 +61,13 @@ def _init_worker(detector_model: str, ocr_model: str, threads: int) -> None:
     )
 
 
-def _decode(jpeg: bytes):
+def _decode(jpeg):
+    """A JPEG snapshot (bytes) or an already-decoded BGR video frame."""
     import cv2
     import numpy as np
 
+    if not isinstance(jpeg, (bytes, bytearray)):
+        return jpeg
     img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
     if img is None:
         raise ValueError("camera image could not be decoded")

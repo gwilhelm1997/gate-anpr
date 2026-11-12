@@ -141,6 +141,7 @@ async def main() -> None:
                 task.cancel()
             await runner.cleanup()
             engine.close()
+            service.close()
             store.close()
 
 

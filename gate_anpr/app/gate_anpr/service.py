@@ -11,6 +11,7 @@ from .ha import HAError, HomeAssistant
 from .mqtt import LANE_CONTROLS, LEGACY_KEYS, RECENT_SLOTS, MqttBridge, discovery_messages, lane_key
 from .recognition import RecognitionEngine, Region
 from .store import Lane, Store
+from .stream import StreamReader
 
 _LOG = logging.getLogger(__name__)
 EVENT_TYPE = "gate_anpr_access"
@@ -53,6 +54,7 @@ class GateAnpr:
         self.version = version
         self.lanes: dict[int, LaneRuntime] = {}
         self._gates: dict[str, GateController] = {}  # shared by lanes that drive the same gate
+        self._streams: dict[int, StreamReader] = {}
         self._gate_poll = gate_poll
         self._clock = time.monotonic
         self.on_lanes_changed = None  # set by the app: resubscribe triggers, refresh dashboard
@@ -66,6 +68,25 @@ class GateAnpr:
             rt.lane = lane
             fresh[lane.id] = rt
         self.lanes = fresh
+        self._sync_streams()
+
+    def _sync_streams(self) -> None:
+        for lane_id, reader in list(self._streams.items()):
+            rt = self.lanes.get(lane_id)
+            if rt is None or rt.lane.stream_url != reader.url:
+                reader.close()
+                del self._streams[lane_id]
+        for lane_id, rt in self.lanes.items():
+            if rt.lane.stream_url and lane_id not in self._streams:
+                self._streams[lane_id] = StreamReader(rt.lane.stream_url, rt.lane.name)
+
+    def stream_info(self, lane_id: int) -> dict | None:
+        reader = self._streams.get(lane_id)
+        return reader.info() if reader else None
+
+    def close(self) -> None:
+        for reader in self._streams.values():
+            reader.close()
 
     def gate(self, lane: Lane) -> GateController:
         ctl = self._gates.get(lane.gate_entity)
@@ -182,7 +203,7 @@ class GateAnpr:
             lane = rt.lane
             out.update(lane=lane.name, camera_entity=lane.camera_entity, trigger_entity=lane.trigger_entity,
                        gate_entity=lane.gate_entity, gate_position_entity=lane.gate_position_entity or None,
-                       access=lane.access, direction=lane.direction,
+                       access=lane.access, direction=lane.direction, stream=self.stream_info(lane.id),
                        cooldown_remaining=round(self.gate(lane).cooldown_remaining(lane.cooldown)))
         return out
 
@@ -215,54 +236,19 @@ class GateAnpr:
         timings: list[int] = []
         error = None
         verdict = evaluate(frames, rules)
+        source = "snapshots"
         try:
             if not self.engine.ready:
                 await self.engine.start()  # recover from a crashed or failed worker
             if not self.engine.ready:
                 raise RuntimeError(self.engine.last_error or "recognition engine is not ready")
-            # Snapshots are fetched by parallel, staggered grabbers while earlier frames are being read,
-            # so the recogniser never waits for the camera. Frames are judged in capture order.
-            queue: asyncio.Queue = asyncio.Queue()
-            done = asyncio.Event()
-            wanted = self.options.max_frames
-
-            async def grabber(offset: float) -> None:
-                await asyncio.sleep(offset)
-                while not done.is_set() and self._clock() - started < self.options.capture_window:
-                    shot_at = self._clock()
-                    try:
-                        await queue.put((shot_at, await self.ha.camera_image(lane.camera_entity)))
-                    except Exception as err:  # noqa: BLE001 - handed to the reader, fails closed
-                        await queue.put((shot_at, err))
-                        return
-                    await asyncio.sleep(max(0.0, self.options.frame_interval - (self._clock() - shot_at)))
-
-            parallel = max(1, self.options.parallel_snapshots)
-            stagger = min(self.options.frame_interval / parallel, 0.15)  # second frame ~0.15 s after the first
-            grabbers = [asyncio.create_task(grabber(i * stagger))
-                        for i in range(parallel)]
-            try:
-                while len(frames) < wanted:
-                    remaining = self.options.capture_window - (self._clock() - started)
-                    if remaining <= 0 and queue.empty():
-                        break
-                    try:
-                        shot_at, jpeg = await asyncio.wait_for(queue.get(), max(remaining, 0) + 2)
-                    except asyncio.TimeoutError:
-                        break
-                    if isinstance(jpeg, Exception):
-                        raise jpeg
-                    width, height, reads, ms = await self.engine.recognise(jpeg, region)
-                    frames.append(Frame(len(frames), shot_at - started, width, height, reads))
-                    jpegs.append(jpeg)
-                    timings.append(ms)
-                    verdict = evaluate(sorted(frames, key=lambda f: f.t), rules)
-                    if verdict.accepted:
-                        break
-            finally:
-                done.set()
-                for task in grabbers:
-                    task.cancel()
+            reader = self._streams.get(lane.id)
+            if reader and reader.healthy():
+                source = "video stream"
+                await self._stream_frames(reader, started, region, rules, frames, jpegs, timings)
+            else:
+                await self._snapshot_frames(lane.camera_entity, started, region, rules, frames, jpegs, timings)
+            verdict = evaluate(sorted(frames, key=lambda f: f.t), rules)
         except Exception as err:  # noqa: BLE001 - every failure is recorded and fails closed
             error = f"{type(err).__name__}: {err}"
             _LOG.warning("%s: recognition session failed: %s", lane.name, error)
@@ -306,6 +292,7 @@ class GateAnpr:
                 "message": detail,
                 "test": test,
                 "access": lane.access,
+                "frame_source": source,
                 "verdict": {k: v for k, v in asdict(verdict).items() if k != "best_box"},
                 "frames": len(frames),
                 "timings_ms": timings,
@@ -326,6 +313,67 @@ class GateAnpr:
         except HAError as err:
             _LOG.warning("Could not fire %s event: %s", EVENT_TYPE, err)
         return event
+
+    async def _stream_frames(self, reader, started, region, rules, frames, jpegs, timings) -> None:
+        """Frames straight from the live video: no snapshot wait. Full decoding starts at the next keyframe."""
+        latest = reader.next_frame(-1, 0)
+        seq = latest[1] if latest else 0  # only frames decoded after the trigger
+        reader.activate()
+        try:
+            while len(frames) < self.options.max_frames and self._clock() - started < self.options.capture_window:
+                item = await asyncio.to_thread(reader.next_frame, seq, 3.0)
+                if item is None:
+                    raise RuntimeError("video stream stalled")
+                shot_at, seq, image = item
+                width, height, reads, ms = await self.engine.recognise(image, region)
+                frames.append(Frame(len(frames), shot_at - started, width, height, reads))
+                jpegs.append(image)
+                timings.append(ms)
+                if evaluate(frames, rules).accepted:
+                    break
+        finally:
+            reader.deactivate()
+
+    async def _snapshot_frames(self, camera, started, region, rules, frames, jpegs, timings) -> None:
+        """Snapshots fetched by staggered grabbers while earlier frames are read; judged in capture order."""
+        queue: asyncio.Queue = asyncio.Queue()
+        done = asyncio.Event()
+
+        async def grabber(offset: float) -> None:
+            await asyncio.sleep(offset)
+            while not done.is_set() and self._clock() - started < self.options.capture_window:
+                shot_at = self._clock()
+                try:
+                    await queue.put((shot_at, await self.ha.camera_image(camera)))
+                except Exception as err:  # noqa: BLE001 - handed to the reader, fails closed
+                    await queue.put((shot_at, err))
+                    return
+                await asyncio.sleep(max(0.0, self.options.frame_interval - (self._clock() - shot_at)))
+
+        parallel = max(1, self.options.parallel_snapshots)
+        stagger = min(self.options.frame_interval / parallel, 0.15)  # second frame ~0.15 s after the first
+        grabbers = [asyncio.create_task(grabber(i * stagger)) for i in range(parallel)]
+        try:
+            while len(frames) < self.options.max_frames:
+                remaining = self.options.capture_window - (self._clock() - started)
+                if remaining <= 0 and queue.empty():
+                    break
+                try:
+                    shot_at, jpeg = await asyncio.wait_for(queue.get(), max(remaining, 0) + 2)
+                except asyncio.TimeoutError:
+                    break
+                if isinstance(jpeg, Exception):
+                    raise jpeg
+                width, height, reads, ms = await self.engine.recognise(jpeg, region)
+                frames.append(Frame(len(frames), shot_at - started, width, height, reads))
+                jpegs.append(jpeg)
+                timings.append(ms)
+                if evaluate(sorted(frames, key=lambda f: f.t), rules).accepted:
+                    break
+        finally:
+            done.set()
+            for task in grabbers:
+                task.cancel()
 
     async def _save_images(self, event, jpegs, verdict, region) -> None:
         if not jpegs:
