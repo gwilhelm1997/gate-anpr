@@ -97,8 +97,35 @@ def _lane_view(lane, ids: dict, manage_url: str | None) -> dict:
     }
 
 
+def _overview(lanes, ids: dict[str, str]) -> dict:
+    """Every gate side by side: live camera, switches and the last decision."""
+    columns = []
+    for lane in lanes:
+        def e(key, lane=lane):
+            return ids[lane_key(lane.id, key)]
+        columns.append({"type": "vertical-stack", "cards": [
+            {"type": "picture-entity", "entity": lane.live_camera_entity or lane.camera_entity,
+             "camera_view": "live", "show_state": False, "name": lane.name},
+            {"type": "entities", "show_header_toggle": False, "entities": [
+                {"entity": e("auto_open")},
+                {"entity": e("enabled")},
+                {"entity": e("last_plate")},
+                {"entity": e("last_result")},
+                {"type": "attribute", "entity": e("last_result"), "attribute": "time", "name": "Time"},
+                {"entity": e("status")},
+                {"entity": e("test")},
+            ]},
+            {"type": "picture-entity", "entity": e("recent_1"), "show_state": False, "name": "Last detection"},
+        ]})
+    return {"title": "All gates", "path": "all", "icon": "mdi:view-dashboard", "type": "sections",
+            "max_columns": max(2, len(lanes)),
+            "sections": [{"type": "grid", "cards": [{**c, "grid_options": {"columns": "full"}}]} for c in columns]}
+
+
 def build(lanes, ids: dict[str, str], manage_url: str | None) -> dict:
     views = [_lane_view(lane, ids, manage_url) for lane in lanes]
+    if len(views) > 1:
+        views.insert(0, _overview(lanes, ids))
     if not views:
         views = [{"title": "Gate ANPR", "path": "setup", "cards": [{"type": "markdown", "content":
                   "No gates configured yet. Open **Gate ANPR** in the sidebar and add a gate."}]}]

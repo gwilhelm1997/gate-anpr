@@ -180,7 +180,7 @@ async def test_app_end_to_end(tmp_path, monkeypatch):
                 assert r.status == 200 and (await r.json())["id"] == 2
             await wait_for(lambda: fake.subscriptions[-1] == ["binary_sensor.gate2_cam_vehicle",
                                                               "binary_sensor.gate_cam_vehicle"])
-            await wait_for(lambda: len(fake.saved_config["views"]) == 2)
+            await wait_for(lambda: len(fake.saved_config["views"]) == 3)
             await fake.fire_vehicle("binary_sensor.gate2_cam_vehicle")
             await wait_for(lambda: len(fake.fired) == 2)
             assert fake.fired[1][1]["lane"] == "Inside gate" and fake.service_calls == []

@@ -30,7 +30,9 @@ def test_dashboard_has_a_view_per_lane():
     ids = dashboard.predicted_ids(lanes)
     assert ids["l1_auto_open"] == "switch.gate_anpr_outside_gate_automatic_opening"
     config = dashboard.build(lanes, ids, "/app/local_gate_anpr")
-    assert [v["title"] for v in config["views"]] == ["Outside gate", "Inside gate"]
+    assert [v["title"] for v in config["views"]] == ["All gates", "Outside gate", "Inside gate"]
+    overview = json.dumps(config["views"][0])
+    assert "camera.a" in overview and "camera.b" in overview
     assert "switch.gate_anpr_inside_gate_automatic_opening" in json.dumps(config)
 
 

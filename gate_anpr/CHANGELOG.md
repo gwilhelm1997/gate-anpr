@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.1
+
+- Dashboard: "All gates" overview tab with every gate's live camera, switches and last result.
+
 ## 2.2.0
 
 - Live video recognition: give a gate its camera's RTSP stream and frames come straight from the
