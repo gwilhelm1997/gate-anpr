@@ -25,7 +25,7 @@
   button.secondary { background:transparent; color:var(--text); border:1px solid var(--line); }
   button.danger { background:transparent; color:var(--bad); border:1px solid var(--line); }
   button:disabled { opacity:.5; cursor:default; }
-  input[type=text], input[type=number], select { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:6px 10px; min-width:0; max-width:100%; }
+  input[type=text], input[type=number], input[type=search], select { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:6px 10px; min-width:0; max-width:100%; }
   label.switch { display:flex; gap:8px; align-items:center; }
   table { width:100%; border-collapse:collapse; }
   th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:middle; }
@@ -108,11 +108,11 @@
     <label>Access
       <select name="access"><option value="approved">Approved vehicles only</option><option value="all">Allow all vehicles</option></select>
     </label>
-    <label>Recognition camera (high resolution)<select name="camera_entity" data-list="cameras" required></select></label>
-    <label>Live view camera (dashboard)<select name="live_camera_entity" data-list="cameras" data-optional="Same as recognition camera"></select></label>
-    <label>Vehicle detection sensor<select name="trigger_entity" data-list="triggers" required></select></label>
-    <label>Gate OPEN control (relay or cover, never a toggle)<select name="gate_entity" data-list="gates" required></select></label>
-    <label>Gate position sensor (optional)<select name="gate_position_entity" data-list="positions" data-optional="None"></select></label>
+    <label>Recognition camera (high resolution)<input type="search" name="camera_entity" data-list="cameras" list="dl-camera_entity" placeholder="Type to search…" autocomplete="off" spellcheck="false" required><datalist id="dl-camera_entity"></datalist></label>
+    <label>Live view camera (dashboard)<input type="search" name="live_camera_entity" data-list="cameras" list="dl-live_camera_entity" placeholder="Same as recognition camera" autocomplete="off" spellcheck="false"><datalist id="dl-live_camera_entity"></datalist></label>
+    <label>Vehicle detection sensor<input type="search" name="trigger_entity" data-list="triggers" list="dl-trigger_entity" placeholder="Type to search…" autocomplete="off" spellcheck="false" required><datalist id="dl-trigger_entity"></datalist></label>
+    <label>Gate OPEN control (relay or cover, never a toggle)<input type="search" name="gate_entity" data-list="gates" list="dl-gate_entity" placeholder="Type to search…" autocomplete="off" spellcheck="false" required><datalist id="dl-gate_entity"></datalist></label>
+    <label>Gate position sensor (optional)<input type="search" name="gate_position_entity" data-list="positions" list="dl-gate_position_entity" placeholder="None" autocomplete="off" spellcheck="false"><datalist id="dl-gate_position_entity"></datalist></label>
     <label>Vehicles approach the gate
       <select name="direction"><option value="towards">Towards the camera (plate grows)</option><option value="away">Away from the camera (plate shrinks)</option></select>
     </label>
@@ -220,14 +220,11 @@ async function openEditor(lane) {
   }
   const form = $("lane-form");
   const data = {...DEFAULTS, ...(lane || {})};
-  for (const sel of form.querySelectorAll("select[data-list]")) {
-    const list = entities[sel.dataset.list] || [];
-    const current = data[sel.name] || "";
-    const opts = (sel.dataset.optional ? [`<option value="">${esc(sel.dataset.optional)}</option>`] : [`<option value="" disabled>Choose…</option>`])
-      .concat(list.map((x) => `<option value="${esc(x.id)}">${esc(x.name)} (${esc(x.id)})</option>`));
-    if (current && !list.some((x) => x.id === current)) opts.push(`<option value="${esc(current)}">${esc(current)}</option>`);
-    sel.innerHTML = opts.join("");
-    sel.value = current;
+  for (const input of form.querySelectorAll("input[data-list]")) {
+    const list = entities[input.dataset.list] || [];
+    // Browsers filter these by any part of the entity ID or friendly name as you type.
+    $(`dl-${input.name}`).innerHTML = list.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");
+    input.value = data[input.name] || "";
   }
   for (const [k, [lo, hi]] of Object.entries(state.limits)) { form.elements[k].min = lo; form.elements[k].max = hi; }
   for (const el of form.elements) if (el.name && !el.dataset.list && data[el.name] !== undefined) el.value = data[el.name];
@@ -239,6 +236,11 @@ async function openEditor(lane) {
 $("lane-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const body = Object.fromEntries(new FormData(ev.target));
+  for (const input of ev.target.querySelectorAll("input[data-list]")) {
+    const v = body[input.name].trim();
+    if (v && !(entities[input.dataset.list] || []).some((x) => x.id === v) && !confirm(`${v} is not in the suggested list for this field. Save anyway?`)) return;
+    body[input.name] = v;
+  }
   for (const k of Object.keys(state.limits)) body[k] = Number(body[k]);
   body.id = Number(body.id || 0);
   try { const l = await api("api/lanes", "POST", body); $("editor").close(); say(`Saved ${l.name}`); refresh(); }

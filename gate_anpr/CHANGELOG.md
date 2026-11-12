@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.1
+
+- Gate editor: entity fields are searchable (type any part of the name or entity ID).
+
 ## 2.0.0
 
 - Multiple gates: add any number of gates (lanes) in the Gate ANPR panel, each with its own camera,
