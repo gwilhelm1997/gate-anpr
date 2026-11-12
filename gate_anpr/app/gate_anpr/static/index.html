@@ -137,6 +137,11 @@
     <label>Region top (%)<input type="number" name="region_top" required></label>
     <label>Region right (%)<input type="number" name="region_right" required></label>
     <label>Region bottom (%)<input type="number" name="region_bottom" required></label>
+    <label style="grid-column:1/-1">Exclusion zones (plates here are always ignored: parking spots, the road)
+      <input type="text" name="exclusions" spellcheck="false" placeholder="left,top,right,bottom in % — e.g. 0,0,30,40; 70,0,100,30">
+      <span class="muted">Shown in red on "Show camera + region".</span>
+    </label>
+    <label>Treat as parked after (minutes, 0 = off)<input type="number" name="parked_minutes" required></label>
     <p class="muted" style="grid-column:1/-1">New gates start with automatic opening off. Test in log-only mode first.</p>
     <div class="row" style="grid-column:1/-1">
       <button type="submit" value="save">Save gate</button>
@@ -150,7 +155,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const cls = (r) => r === "granted" ? "granted" : r.startsWith("approved") ? "approved" : "rejected";
 const DEFAULTS = {name: "", access: "approved", direction: "towards", min_confidence: 90, min_consistent: 2, cooldown: 60,
-                  min_plate_width: 60, region_left: 0, region_top: 0, region_right: 100, region_bottom: 100};
+                  min_plate_width: 60, parked_minutes: 2, exclusions: "", region_left: 0, region_top: 0, region_right: 100, region_bottom: 100};
 let state = {lanes: [], plates: []};
 let approved = new Set();
 let entities = null;
@@ -337,7 +342,7 @@ $("lanes").addEventListener("click", async (ev) => {
       const res = await api(`api/lanes/${id}/snapshot`);
       const img = box.querySelector("img.snapshot");
       img.src = URL.createObjectURL(await res.blob()); img.hidden = false; img.alt = `${lane.name} camera with the detection region outlined`;
-      say("Detection region outlined in orange.");
+      say("Detection region in orange, exclusion zones in red.");
     }
   } catch (err) { say(err.message, true); }
 });

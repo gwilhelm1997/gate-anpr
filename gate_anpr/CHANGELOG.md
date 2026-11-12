@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.0
+
+- Exclusion zones per gate: rectangles (e.g. parking spots, the road) where plates are always ignored;
+  drawn in red on the gate's "Show camera + region" snapshot.
+- Parked-vehicle filter: a plate seen at the same spot and size at least N minutes earlier
+  (default 2, per gate) is treated as parked and ignored. A parked car can no longer open the gate,
+  nor hide an arriving vehicle. Ignored plates are listed in each event's details.
+
 ## 2.3.0
 
 - Video stream is now on demand: it connects only when a vehicle is detected (snapshots start at the

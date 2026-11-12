@@ -114,7 +114,8 @@ def _self_test() -> int:
     return round((time.perf_counter() - started) * 1000)
 
 
-def _annotate(jpeg: bytes, box, label: str, region: Region, max_width: int) -> tuple[bytes, bytes | None]:
+def _annotate(jpeg: bytes, box, label: str, region: Region, max_width: int,
+              exclusions=()) -> tuple[bytes, bytes | None]:
     import cv2
 
     img = _decode(jpeg)
@@ -128,6 +129,8 @@ def _annotate(jpeg: bytes, box, label: str, region: Region, max_width: int) -> t
     rx1, ry1, rx2, ry2 = region.pixels(width, height)
     thick = max(2, width // 640)
     cv2.rectangle(img, (rx1, ry1), (rx2, ry2), (255, 200, 0), thick)
+    for l, t, r, b in exclusions:
+        cv2.rectangle(img, (int(l * width), int(t * height)), (int(r * width), int(b * height)), (0, 0, 255), thick)
     if box:
         cv2.rectangle(img, box[:2], box[2:], (0, 255, 0), thick * 2)
         scale = max(0.8, width / 1400)
@@ -219,8 +222,8 @@ class RecognitionEngine:
         return out["width"], out["height"], reads, out["ms"]
 
     async def annotate(self, jpeg: bytes, box, label: str, region: Region,
-                       max_width: int = 1280) -> tuple[bytes, bytes | None]:
-        return await self._run(_annotate, jpeg, box, label, region, max_width)
+                       max_width: int = 1280, exclusions=()) -> tuple[bytes, bytes | None]:
+        return await self._run(_annotate, jpeg, box, label, region, max_width, tuple(exclusions))
 
     def close(self) -> None:
         if self._pool:

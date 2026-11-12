@@ -17,6 +17,9 @@ _ENTITY = {
     "gate_entity": re.compile(r"(cover|switch)\.[a-z0-9_]+"),
     "gate_position_entity": re.compile(r"((cover|binary_sensor)\.[a-z0-9_]+)?"),
     "stream_url": re.compile(r"(rtsps?://[^\s]{3,300})?"),
+    # left,top,right,bottom in percent; several rectangles separated by ';'
+    "exclusions": re.compile(r"(\d{1,3}(\.\d+)?,\d{1,3}(\.\d+)?,\d{1,3}(\.\d+)?,\d{1,3}(\.\d+)?"
+                             r"(;\d{1,3}(\.\d+)?,\d{1,3}(\.\d+)?,\d{1,3}(\.\d+)?,\d{1,3}(\.\d+)?){0,9})?"),
 }
 CHOICES = {"direction": ("towards", "away"), "access": ("approved", "all")}
 LIMITS = {
@@ -28,6 +31,7 @@ LIMITS = {
     "region_top": (0, 100),
     "region_right": (0, 100),
     "region_bottom": (0, 100),
+    "parked_minutes": (0, 120),
 }
 # Settings that are also native Home Assistant controls.
 CONTROL_KEYS = ["enabled", "auto_open", *LIMITS]
@@ -57,6 +61,8 @@ class Lane:
     region_top: int = 0
     region_right: int = 100
     region_bottom: int = 100
+    exclusions: str = ""  # rectangles where plates are always ignored (parking spots, the road)
+    parked_minutes: int = 2  # a plate seen at the same spot this long ago is parked; 0 = off
 
     @classmethod
     def coerce(cls, key: str, value):
@@ -85,6 +91,11 @@ class Lane:
             if value not in CHOICES[key]:
                 raise ValueError(f"{key} must be one of {', '.join(CHOICES[key])}")
             return value
+        if key == "exclusions":
+            value = value.replace(" ", "")
+            if not _ENTITY[key].fullmatch(value) or any(float(v) > 100 for v in re.split("[,;]", value) if v):
+                raise ValueError("exclusion zones must look like 0,0,30,40;70,0,100,30 (percent)")
+            return value
         if not _ENTITY[key].fullmatch(value):
             raise ValueError(f"{key}: {value!r} is not a valid entity for this field")
         return value
@@ -102,6 +113,14 @@ class Lane:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    def exclusion_boxes(self) -> list[tuple[float, float, float, float]]:
+        """Exclusion rectangles as fractions of the frame."""
+        out = []
+        for part in filter(None, self.exclusions.split(";")):
+            l, t, r, b = (float(v) / 100 for v in part.split(","))
+            out.append((min(l, r), min(t, b), max(l, r), max(t, b)))
+        return out
 
     def public(self) -> dict:
         """Safe to show: the stream URL is replaced by whether one is set."""

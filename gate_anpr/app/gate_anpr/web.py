@@ -138,7 +138,8 @@ def create_app(service, allowed_ips: set) -> web.Application:
         rt = service.lanes[lane_id(request)]
         try:
             jpeg = await service.ha.camera_image(rt.lane.camera_entity)
-            frame, _plate = await service.engine.annotate(jpeg, None, "", rt.region(), 1280)
+            frame, _plate = await service.engine.annotate(jpeg, None, "", rt.region(), 1280,
+                                                          rt.lane.exclusion_boxes())
         except Exception as err:  # noqa: BLE001
             raise web.HTTPBadGateway(text=f"snapshot failed: {err}") from err
         return web.Response(body=frame, content_type="image/jpeg")

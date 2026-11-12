@@ -10,6 +10,7 @@ from .gate import GateController
 from .ha import HAError, HomeAssistant
 from .mqtt import LANE_CONTROLS, LEGACY_KEYS, RECENT_SLOTS, MqttBridge, discovery_messages, lane_key
 from .recognition import RecognitionEngine, Region
+from .parked import ParkedFilter
 from .store import Lane, Store
 from .stream import StreamReader
 
@@ -33,6 +34,7 @@ class LaneRuntime:
         self.lock = asyncio.Lock()
         self.status = "idle"
         self.last_event: dict | None = None
+        self.parked = ParkedFilter()
 
     def region(self) -> Region:
         s = self.lane
@@ -231,6 +233,8 @@ class GateAnpr:
         started_wall, started = time.time(), self._clock()
         await self.publish_status(rt, "capturing")
         region, rules = rt.region(), rt.rules()
+        ignored: list[str] = []
+        all_frames: list[Frame] = []
         frames: list[Frame] = []
         jpegs: list[bytes] = []
         timings: list[int] = []
@@ -242,12 +246,14 @@ class GateAnpr:
                 await self.engine.start()  # recover from a crashed or failed worker
             if not self.engine.ready:
                 raise RuntimeError(self.engine.last_error or "recognition engine is not ready")
-            source = await self._collect_frames(lane, started, region, rules, frames, jpegs, timings)
+            source = await self._collect_frames(rt, started, started_wall, region, rules, frames, jpegs, timings,
+                                                ignored, all_frames)
             verdict = evaluate(sorted(frames, key=lambda f: f.t), rules)
         except Exception as err:  # noqa: BLE001 - every failure is recorded and fails closed
             error = f"{type(err).__name__}: {err}"
             _LOG.warning("%s: recognition session failed: %s", lane.name, error)
 
+        rt.parked.remember(all_frames)
         approved = self.store.is_approved(verdict.plate, lane.id) if verdict.accepted else None
         allowed = bool(approved) or (verdict.accepted and lane.access == "all")
         if error:
@@ -288,6 +294,7 @@ class GateAnpr:
                 "test": test,
                 "access": lane.access,
                 "frame_source": source,
+                "ignored": ignored,
                 "verdict": {k: v for k, v in asdict(verdict).items() if k != "best_box"},
                 "frames": len(frames),
                 "timings_ms": timings,
@@ -309,9 +316,12 @@ class GateAnpr:
             _LOG.warning("Could not fire %s event: %s", EVENT_TYPE, err)
         return event
 
-    async def _collect_frames(self, lane, started, region, rules, frames, jpegs, timings) -> str:
+    async def _collect_frames(self, rt, started, started_wall, region, rules, frames, jpegs, timings,
+                              ignored, all_frames) -> str:
         """Snapshots start at once; if the gate has a video stream it connects in parallel and, once
         frames flow, takes over (no ~1.2 s wait per frame). Frames are judged in capture order."""
+        lane = rt.lane
+        exclusions = lane.exclusion_boxes()
         reader = self._streams.get(lane.id)
         seq = reader.activate() if reader else 0
         queue: asyncio.Queue = asyncio.Queue()
@@ -357,6 +367,11 @@ class GateAnpr:
                             continue  # the stream can carry on
                         raise image
                 width, height, reads, ms = await self.engine.recognise(image, region)
+                all_frames.append(Frame(len(all_frames), shot_at - started, width, height, reads))
+                # Parked or excluded vehicles must never be read, nor hide an arriving one.
+                reads, skipped = rt.parked.keep(reads, width, height, exclusions, lane.parked_minutes,
+                                                started_wall)
+                ignored.extend(s for s in skipped if s not in ignored)
                 frames.append(Frame(len(frames), shot_at - started, width, height, reads))
                 jpegs.append(image)
                 timings.append(ms)

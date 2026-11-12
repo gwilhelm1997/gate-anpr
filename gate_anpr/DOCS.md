@@ -29,6 +29,21 @@ opening is logged with a registration and an image. Use it where any vehicle may
 
 Approved registrations apply to **all gates** unless you tick specific gates next to the plate.
 
+## Parked vehicles and exclusion zones
+
+A vehicle that stays in view must never open the gate, and must not hide one that arrives. Per gate:
+
+- **Exclusion zones**: rectangles, in percent of the frame, where plates are always ignored. Write
+  them as `left,top,right,bottom`, several separated by `;`, e.g. `0,0,30,40; 70,0,100,30`. Use them
+  for parking spots, a neighbour's driveway or the road. "Show camera + region" draws them in red.
+- **Treat as parked after** (default 2 minutes): a plate seen at the same spot and size in a detection
+  at least that long ago is ignored. A car that pulls up and waits is unaffected (it was moving), and a
+  parked car that drives off is read again because its position changes.
+- The parked memory is kept in RAM: after an app restart a parked car is recognised as parked again
+  from its next sighting plus the waiting time. Use an exclusion zone for spots that are always parked in.
+
+Ignored plates and the reason are listed in each event's details in the access history.
+
 ## Faster recognition with the video stream
 
 By default each frame is a 4K snapshot, which your camera takes about 1.2 s to deliver. Give a gate
