@@ -116,6 +116,7 @@ async function api(path, method = "GET", body) {
 function say(text, bad) { $("msg").textContent = text; $("msg").style.color = bad ? "var(--bad)" : ""; }
 
 let settingsBuilt = false;
+let approved = new Set();
 async function refresh() {
   const s = await api("api/state");
   $("status").textContent = `Status: ${s.status}`;
@@ -132,6 +133,7 @@ async function refresh() {
     settingsBuilt = true;
   }
   for (const k of Object.keys(LABELS)) if (document.activeElement?.name !== k) $("settings").elements[k].value = s.settings[k];
+  approved = new Set(s.plates.map((p) => p.plate));
   $("plates").innerHTML = s.plates.map((p) => `<tr>
       <td class="plate">${esc(p.plate)}</td><td>${esc(p.label)}</td>
       <td><input type="checkbox" data-toggle="${esc(p.plate)}" data-label="${esc(p.label)}" ${p.enabled ? "checked" : ""} aria-label="Enable ${esc(p.plate)}"></td>
@@ -149,7 +151,7 @@ async function loadEvents() {
     const img = e.image ? `<a href="images/${e.image}" target="_blank"><img class="thumb" src="images/${e.image}" alt="Detection ${e.id}" loading="lazy"></a>` : "";
     const plateImg = e.plate_image ? `<br><img class="plate-thumb" src="images/${e.plate_image}" alt="">` : "";
     return `<tr><td>${esc(t)}${e.detail.test ? " <span class=muted>(test)</span>" : ""}</td><td>${img}</td>
-      <td class="plate">${esc(e.plate || "–")}${plateImg}</td>
+      <td class="plate">${esc(e.plate || "–")}${e.plate && !approved.has(e.plate) ? ` <button class="secondary" data-approve="${esc(e.plate)}" title="Add to approved vehicles">+ Approve</button>` : ""}${plateImg}</td>
       <td class="${cls(e.result)}">${esc(e.result)}<br><span class="muted">${esc(e.reason)}</span></td>
       <td>${e.confidence ?? "–"}</td>
       <td><details><summary class="muted">${v.votes ?? 0}/${e.detail.frames} frames</summary><pre>${esc(JSON.stringify(e.detail, null, 1))}</pre></details></td></tr>`;
@@ -195,6 +197,14 @@ $("snap").addEventListener("click", async () => {
     $("snapshot").alt = "Camera snapshot with the detection region outlined";
     say("Detection region outlined in orange.");
   } catch (err) { say(err.message, true); }
+});
+$("events").addEventListener("click", async (ev) => {
+  const plate = ev.target.dataset.approve;
+  if (!plate) return;
+  const label = prompt(`Approve ${plate}? Optional vehicle / owner name:`, "");
+  if (label === null) return;
+  try { await api("api/plates", "POST", {plate, label, enabled: true}); say(`Approved ${plate}`); refresh(); }
+  catch (err) { say(err.message, true); }
 });
 $("filter").addEventListener("change", loadEvents);
 refresh().catch((err) => say(err.message, true));
