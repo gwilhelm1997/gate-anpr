@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.2
+
+- Gate OPEN control search no longer offers CLOSE, STOP or toggle inputs, or Gate ANPR's own switches.
+
 ## 2.0.1
 
 - Gate editor: entity fields are searchable (type any part of the name or entity ID).

@@ -128,6 +128,9 @@ def test_entity_pickers_hide_toggle_inputs():
     from gate_anpr.web import entity_choices
     states = [{"entity_id": "switch.sonoff_100219c178_2", "attributes": {"friendly_name": "Outside gate control OPEN"}},
               {"entity_id": "switch.sonoff_100219c178_4", "attributes": {"friendly_name": "Outside Gate toggle"}},
+              {"entity_id": "switch.sonoff_100219c178_3", "attributes": {"friendly_name": "Outside gate control CLOSE"}},
+              {"entity_id": "switch.sonoff_100219c178_1", "attributes": {"friendly_name": "Outside gate control STOP"}},
+              {"entity_id": "switch.gate_anpr_outside_gate_automatic_opening", "attributes": {}},
               {"entity_id": "binary_sensor.gate_cam_vehicle", "attributes": {}},
               {"entity_id": "binary_sensor.gate_cam_person", "attributes": {}},
               {"entity_id": "camera.gate_cam_snapshots_clear", "attributes": {}}]

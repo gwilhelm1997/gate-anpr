@@ -26,8 +26,11 @@ def entity_choices(states: list[dict]) -> dict:
         by_domain.setdefault(s["entity_id"].split(".")[0], []).append(s)
     sort = lambda xs: sorted((item(s) for s in xs), key=lambda x: x["id"])  # noqa: E731
     binary = by_domain.get("binary_sensor", [])
+    # Never offer toggle, close or stop inputs, or Gate ANPR's own switches, as a gate OPEN control.
+    blocked = re.compile(r"toggle|close|stop", re.I)
     gates = [s for s in by_domain.get("switch", []) + by_domain.get("cover", [])
-             if "toggle" not in str(s.get("attributes", {}).get("friendly_name", "")).lower()]
+             if not s["entity_id"].startswith("switch.gate_anpr_")
+             and not blocked.search(f'{s["entity_id"]} {s.get("attributes", {}).get("friendly_name", "")}')]
     return {
         "cameras": sort(by_domain.get("camera", [])),
         "triggers": sort([s for s in binary if "vehicle" in s["entity_id"]]) or sort(binary),
