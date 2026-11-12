@@ -1,5 +1,5 @@
 name: Gate ANPR
-version: "2.0.2"
+version: "2.1.0"
 slug: gate_anpr
 description: Local number-plate recognition that opens the gate for approved vehicles
 url: https://github.com/gwilhelm1997/gate-anpr
@@ -28,7 +28,8 @@ options:
   ocr_threads: 2
   max_frames: 6
   capture_window: 8
-  frame_interval: 0.6
+  frame_interval: 0.4
+  parallel_snapshots: 2
   confirm_timeout: 10
   retention_days: 30
   create_dashboard: true
@@ -45,6 +46,7 @@ schema:
   max_frames: int(2,12)
   capture_window: float(2,20)
   frame_interval: float(0.2,3)
+  parallel_snapshots: int(1,3)
   confirm_timeout: int(3,60)
   retention_days: int(1,365)
   create_dashboard: bool

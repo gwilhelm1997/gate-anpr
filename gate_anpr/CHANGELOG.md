@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.0
+
+- Faster decisions: camera snapshots are fetched in parallel and overlap with recognition instead of
+  waiting for each other (new option "Parallel snapshots", default 2; frame interval now 0.4 s).
+
+## 2.0.3
+
+- Gate editor: built-in entity search list (works in the Home Assistant app and on phones). Every typed word is matched against name and entity ID; likely entities are listed first.
+
 ## 2.0.2
 
 - Gate OPEN control search no longer offers CLOSE, STOP or toggle inputs, or Gate ANPR's own switches.

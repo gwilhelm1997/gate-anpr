@@ -21,6 +21,7 @@ class Options:
     max_frames: int = 6
     capture_window: float = 8.0
     frame_interval: float = 0.6
+    parallel_snapshots: int = 2
     confirm_timeout: float = 20.0
     retention_days: int = 30
 
@@ -219,17 +220,49 @@ class GateAnpr:
                 await self.engine.start()  # recover from a crashed or failed worker
             if not self.engine.ready:
                 raise RuntimeError(self.engine.last_error or "recognition engine is not ready")
-            while len(frames) < self.options.max_frames and self._clock() - started < self.options.capture_window:
-                shot_at = self._clock()
-                jpeg = await self.ha.camera_image(lane.camera_entity)
-                width, height, reads, ms = await self.engine.recognise(jpeg, region)
-                frames.append(Frame(len(frames), shot_at - started, width, height, reads))
-                jpegs.append(jpeg)
-                timings.append(ms)
-                verdict = evaluate(frames, rules)
-                if verdict.accepted:
-                    break
-                await asyncio.sleep(max(0.0, self.options.frame_interval - (self._clock() - shot_at)))
+            # Snapshots are fetched by parallel, staggered grabbers while earlier frames are being read,
+            # so the recogniser never waits for the camera. Frames are judged in capture order.
+            queue: asyncio.Queue = asyncio.Queue()
+            done = asyncio.Event()
+            wanted = self.options.max_frames
+
+            async def grabber(offset: float) -> None:
+                await asyncio.sleep(offset)
+                while not done.is_set() and self._clock() - started < self.options.capture_window:
+                    shot_at = self._clock()
+                    try:
+                        await queue.put((shot_at, await self.ha.camera_image(lane.camera_entity)))
+                    except Exception as err:  # noqa: BLE001 - handed to the reader, fails closed
+                        await queue.put((shot_at, err))
+                        return
+                    await asyncio.sleep(max(0.0, self.options.frame_interval - (self._clock() - shot_at)))
+
+            parallel = max(1, self.options.parallel_snapshots)
+            stagger = min(self.options.frame_interval / parallel, 0.15)  # second frame ~0.15 s after the first
+            grabbers = [asyncio.create_task(grabber(i * stagger))
+                        for i in range(parallel)]
+            try:
+                while len(frames) < wanted:
+                    remaining = self.options.capture_window - (self._clock() - started)
+                    if remaining <= 0 and queue.empty():
+                        break
+                    try:
+                        shot_at, jpeg = await asyncio.wait_for(queue.get(), max(remaining, 0) + 2)
+                    except asyncio.TimeoutError:
+                        break
+                    if isinstance(jpeg, Exception):
+                        raise jpeg
+                    width, height, reads, ms = await self.engine.recognise(jpeg, region)
+                    frames.append(Frame(len(frames), shot_at - started, width, height, reads))
+                    jpegs.append(jpeg)
+                    timings.append(ms)
+                    verdict = evaluate(sorted(frames, key=lambda f: f.t), rules)
+                    if verdict.accepted:
+                        break
+            finally:
+                done.set()
+                for task in grabbers:
+                    task.cancel()
         except Exception as err:  # noqa: BLE001 - every failure is recorded and fails closed
             error = f"{type(err).__name__}: {err}"
             _LOG.warning("%s: recognition session failed: %s", lane.name, error)

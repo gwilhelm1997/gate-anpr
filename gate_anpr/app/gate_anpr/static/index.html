@@ -45,6 +45,13 @@
   details summary { cursor:pointer; }
   dialog { border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--text); width:min(820px, 96vw); }
   dialog::backdrop { background:#0007; }
+  .grid label { position:relative; }
+  .picker { position:absolute; top:100%; left:0; right:0; z-index:5; max-height:260px; overflow:auto;
+            background:var(--card); border:1px solid var(--line); border-radius:8px; box-shadow:0 6px 20px #0004; }
+  .picker button { display:block; width:100%; text-align:left; background:transparent; color:var(--text);
+                   border:0; border-bottom:1px solid var(--line); border-radius:0; padding:6px 10px; }
+  .picker button:hover, .picker button.active { background:#03a9f422; }
+  .picker small { display:block; color:var(--muted); font-family:ui-monospace, Consolas, monospace; }
   .chips { display:flex; flex-wrap:wrap; gap:4px 12px; }
 </style>
 </head>
@@ -108,11 +115,11 @@
     <label>Access
       <select name="access"><option value="approved">Approved vehicles only</option><option value="all">Allow all vehicles</option></select>
     </label>
-    <label>Recognition camera (high resolution)<input type="search" name="camera_entity" data-list="cameras" list="dl-camera_entity" placeholder="Type to search…" autocomplete="off" spellcheck="false" required><datalist id="dl-camera_entity"></datalist></label>
-    <label>Live view camera (dashboard)<input type="search" name="live_camera_entity" data-list="cameras" list="dl-live_camera_entity" placeholder="Same as recognition camera" autocomplete="off" spellcheck="false"><datalist id="dl-live_camera_entity"></datalist></label>
-    <label>Vehicle detection sensor<input type="search" name="trigger_entity" data-list="triggers" list="dl-trigger_entity" placeholder="Type to search…" autocomplete="off" spellcheck="false" required><datalist id="dl-trigger_entity"></datalist></label>
-    <label>Gate OPEN control (relay or cover, never a toggle)<input type="search" name="gate_entity" data-list="gates" list="dl-gate_entity" placeholder="Type to search…" autocomplete="off" spellcheck="false" required><datalist id="dl-gate_entity"></datalist></label>
-    <label>Gate position sensor (optional)<input type="search" name="gate_position_entity" data-list="positions" list="dl-gate_position_entity" placeholder="None" autocomplete="off" spellcheck="false"><datalist id="dl-gate_position_entity"></datalist></label>
+    <label>Recognition camera (high resolution)<input type="text" name="camera_entity" data-list="cameras" placeholder="Type to search…" autocomplete="off" spellcheck="false" required><div class="picker" hidden></div></label>
+    <label>Live view camera (dashboard)<input type="text" name="live_camera_entity" data-list="cameras" placeholder="Same as recognition camera" autocomplete="off" spellcheck="false"><div class="picker" hidden></div></label>
+    <label>Vehicle detection sensor<input type="text" name="trigger_entity" data-list="triggers" placeholder="Type to search…" autocomplete="off" spellcheck="false" required><div class="picker" hidden></div></label>
+    <label>Gate OPEN control (relay or cover, never a toggle)<input type="text" name="gate_entity" data-list="gates" placeholder="Type to search…" autocomplete="off" spellcheck="false" required><div class="picker" hidden></div></label>
+    <label>Gate position sensor (optional)<input type="text" name="gate_position_entity" data-list="positions" placeholder="None" autocomplete="off" spellcheck="false"><div class="picker" hidden></div></label>
     <label>Vehicles approach the gate
       <select name="direction"><option value="towards">Towards the camera (plate grows)</option><option value="away">Away from the camera (plate shrinks)</option></select>
     </label>
@@ -220,12 +227,7 @@ async function openEditor(lane) {
   }
   const form = $("lane-form");
   const data = {...DEFAULTS, ...(lane || {})};
-  for (const input of form.querySelectorAll("input[data-list]")) {
-    const list = entities[input.dataset.list] || [];
-    // Browsers filter these by any part of the entity ID or friendly name as you type.
-    $(`dl-${input.name}`).innerHTML = list.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");
-    input.value = data[input.name] || "";
-  }
+  for (const input of form.querySelectorAll("input[data-list]")) input.value = data[input.name] || "";
   for (const [k, [lo, hi]] of Object.entries(state.limits)) { form.elements[k].min = lo; form.elements[k].max = hi; }
   for (const el of form.elements) if (el.name && !el.dataset.list && data[el.name] !== undefined) el.value = data[el.name];
   form.elements.id.value = lane ? lane.id : "";
@@ -246,6 +248,52 @@ $("lane-form").addEventListener("submit", async (ev) => {
   try { const l = await api("api/lanes", "POST", body); $("editor").close(); say(`Saved ${l.name}`); refresh(); }
   catch (err) { say(err.message, true); alert(err.message); }
 });
+
+// Entity search: every typed word must appear in the friendly name or entity ID, in any order.
+const HINTS = {cameras: /snapshots_clear|clear/, triggers: /vehicle/, gates: /open/, positions: /gate|door|contact/};
+function matches(input) {
+  const list = (entities && entities[input.dataset.list]) || [];
+  const words = input.value.toLowerCase().split(/[\s._-]+/).filter(Boolean);
+  const hint = HINTS[input.dataset.list];
+  return list
+    .map((x) => ({x, hay: `${x.name} ${x.id}`.toLowerCase()}))
+    .filter(({hay}) => words.every((w) => hay.includes(w)))
+    .sort((a, b) => (hint.test(b.hay) - hint.test(a.hay)) || a.x.name.localeCompare(b.x.name))
+    .slice(0, 60).map(({x}) => x);
+}
+function showPicker(input) {
+  const box = input.parentElement.querySelector(".picker");
+  const found = matches(input);
+  box.innerHTML = found.length
+    ? found.map((x, i) => `<button type="button" data-pick="${esc(x.id)}" class="${i === 0 ? "active" : ""}">${esc(x.name)}<small>${esc(x.id)} · ${esc(x.state)}</small></button>`).join("")
+    : `<div class="muted" style="padding:8px 10px">No matching entities</div>`;
+  box.hidden = false;
+}
+function hidePickers() { for (const b of document.querySelectorAll(".picker")) b.hidden = true; }
+$("lane-form").addEventListener("focusin", (ev) => { if (ev.target.dataset.list) { hidePickers(); showPicker(ev.target); } });
+$("lane-form").addEventListener("input", (ev) => { if (ev.target.dataset.list) showPicker(ev.target); });
+$("lane-form").addEventListener("keydown", (ev) => {
+  if (!ev.target.dataset.list) return;
+  const box = ev.target.parentElement.querySelector(".picker");
+  const items = [...box.querySelectorAll("[data-pick]")];
+  const i = items.findIndex((b) => b.classList.contains("active"));
+  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+    ev.preventDefault();
+    items[i]?.classList.remove("active");
+    const next = items[(i + (ev.key === "ArrowDown" ? 1 : -1) + items.length) % items.length];
+    next?.classList.add("active"); next?.scrollIntoView({block: "nearest"});
+  } else if (ev.key === "Enter" && !box.hidden && items[i]) {
+    ev.preventDefault(); ev.target.value = items[i].dataset.pick; box.hidden = true;
+  } else if (ev.key === "Escape") { box.hidden = true; ev.stopPropagation(); ev.preventDefault(); }
+});
+$("lane-form").addEventListener("mousedown", (ev) => {
+  const pick = ev.target.closest("[data-pick]");
+  if (!pick) return;
+  ev.preventDefault();
+  const input = pick.closest("label").querySelector("input[data-list]");
+  input.value = pick.dataset.pick; pick.parentElement.hidden = true;
+});
+$("lane-form").addEventListener("focusout", (ev) => { if (ev.target.dataset.list) setTimeout(() => { if (!ev.target.parentElement.contains(document.activeElement)) ev.target.parentElement.querySelector(".picker").hidden = true; }, 150); });
 $("editor-cancel").addEventListener("click", () => $("editor").close());
 $("add-lane").addEventListener("click", () => openEditor(null));
 

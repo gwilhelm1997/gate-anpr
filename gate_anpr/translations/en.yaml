@@ -32,6 +32,9 @@ configuration:
   frame_interval:
     name: Frame interval (seconds)
     description: Minimum time between captured frames.
+  parallel_snapshots:
+    name: Parallel snapshots
+    description: Camera snapshots fetched at the same time while earlier frames are read. 2 roughly halves the time to a decision.
   confirm_timeout:
     name: Gate confirmation timeout (seconds)
     description: How long to wait for the gate control to confirm the OPEN command.

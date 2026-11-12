@@ -230,3 +230,22 @@ async def test_invalid_lane_is_refused(make):
         await svc.save_lane(lane_data(gate="light.porch"))
     with pytest.raises(ValueError):
         await svc.save_lane({"name": "No camera"})
+
+
+async def test_parallel_snapshots_halve_time_to_decision(make, fake_ha):
+    timings = {}
+    for parallel in (1, 2):
+        svc = make([])
+        frames = [b"far", b"near", b"near", b"near"]
+
+        async def camera(entity_id, frames=frames):
+            await asyncio.sleep(0.4)  # a 4K Reolink snapshot takes about this long
+            return frames.pop(0)
+        fake_ha.camera_image = camera
+        svc.options = Options(max_frames=4, capture_window=5, frame_interval=0.4, parallel_snapshots=parallel,
+                              confirm_timeout=1)
+        event = await svc.run_session(1, test=True)
+        assert event["result"] == "approved_test"
+        timings[parallel] = event["detail"]["duration_s"]
+    # Two 0.4 s snapshots: 0.8 s one after the other, about 0.55 s with two in flight.
+    assert timings[1] >= 0.78 and timings[2] <= 0.65, timings

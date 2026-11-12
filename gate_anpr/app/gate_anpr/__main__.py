@@ -61,7 +61,8 @@ async def main() -> None:
 
     options = Options(
         max_frames=opts.get("max_frames", 6), capture_window=opts.get("capture_window", 8.0),
-        frame_interval=opts.get("frame_interval", 0.6), confirm_timeout=opts.get("confirm_timeout", 20),
+        frame_interval=opts.get("frame_interval", 0.6),
+        parallel_snapshots=opts.get("parallel_snapshots", 2), confirm_timeout=opts.get("confirm_timeout", 20),
         retention_days=opts.get("retention_days", 30),
     )
     store = Store(data_dir)
