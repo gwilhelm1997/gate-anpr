@@ -2,6 +2,7 @@ name: Gate ANPR
 version: "0.1.0"
 slug: gate_anpr
 description: Local number-plate recognition that opens the gate for approved vehicles
+url: https://github.com/gwilhelm1997/gate-anpr
 arch:
   - amd64
   - aarch64
