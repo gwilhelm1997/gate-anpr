@@ -59,7 +59,13 @@ def test_invalid_nz_format_rejected():
 
 def test_departing_vehicle_rejected():
     v = evaluate(frames([read("ABC123", 160)], [read("ABC123", 130)]), RULES)
-    assert not v.accepted and v.reason == "departing"
+    assert not v.accepted and v.reason == "wrong_direction"
+
+
+def test_away_lane_accepts_shrinking_and_rejects_growing_plates():
+    away = Rules(min_confidence=0.9, min_consistent=2, min_plate_width=60, direction="away")
+    assert evaluate(frames([read("ABC123", 160)], [read("ABC123", 130)]), away).accepted
+    assert evaluate(frames([read("ABC123", 100)], [read("ABC123", 130)]), away).reason == "wrong_direction"
 
 
 def test_passing_vehicle_rejected():

@@ -47,6 +47,7 @@ class Rules:
     min_confidence: float = 0.90
     min_consistent: int = 2
     min_plate_width: int = 60
+    direction: str = "towards"  # vehicles approach the gate towards (plate grows) or away from the camera
 
 
 @dataclass(frozen=True)
@@ -100,8 +101,10 @@ def evaluate(frames: list[Frame], rules: Rules) -> Verdict:
 
     if r1.width < rules.min_plate_width:
         return Verdict(False, "too_far", **base)
-    if growth < 1 - SHRINK_TOLERANCE:
-        return Verdict(False, "departing", **base)
-    if lateral > MAX_LATERAL_SHIFT and growth < LATERAL_GROWTH_EXCUSE:
+    # 'Approaching the gate' means growing on a towards-lane and shrinking on an away-lane.
+    progress = growth if rules.direction == "towards" else 1 / max(growth, 1e-6)
+    if progress < 1 - SHRINK_TOLERANCE:
+        return Verdict(False, "wrong_direction", **base)
+    if lateral > MAX_LATERAL_SHIFT and progress < LATERAL_GROWTH_EXCUSE:
         return Verdict(False, "passing", **base)
     return Verdict(True, "consistent", **base)

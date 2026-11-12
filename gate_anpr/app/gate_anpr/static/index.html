@@ -13,17 +13,19 @@
   }
   * { box-sizing: border-box; }
   body { margin:0; font:15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--text); }
-  main { max-width:1100px; margin:0 auto; padding:16px; display:grid; gap:16px; }
+  main { max-width:1150px; margin:0 auto; padding:16px; display:grid; gap:16px; }
   section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
-  h1 { font-size:20px; margin:0; } h2 { font-size:16px; margin:0 0 12px; }
+  h1 { font-size:20px; margin:0; } h2 { font-size:16px; margin:0 0 12px; } h3 { font-size:15px; margin:0; }
   .row { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; }
+  .between { justify-content:space-between; }
   .pill { padding:2px 10px; border-radius:999px; border:1px solid var(--line); font-size:13px; }
   .granted { color:var(--ok); } .rejected, .error { color:var(--bad); } .approved { color:var(--warn); }
   button, input, select { font:inherit; color:inherit; }
   button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:7px 14px; cursor:pointer; }
   button.secondary { background:transparent; color:var(--text); border:1px solid var(--line); }
+  button.danger { background:transparent; color:var(--bad); border:1px solid var(--line); }
   button:disabled { opacity:.5; cursor:default; }
-  input[type=text], input[type=number] { background:transparent; border:1px solid var(--line); border-radius:8px; padding:6px 10px; min-width:0; }
+  input[type=text], input[type=number], select { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:6px 10px; min-width:0; max-width:100%; }
   label.switch { display:flex; gap:8px; align-items:center; }
   table { width:100%; border-collapse:collapse; }
   th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:middle; }
@@ -32,32 +34,36 @@
   .thumb { width:120px; border-radius:6px; display:block; }
   .plate-thumb { height:36px; border-radius:4px; }
   .muted { color:var(--muted); font-size:13px; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:10px 16px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:10px 16px; }
+  .grid label { display:flex; flex-direction:column; gap:4px; font-size:14px; }
+  .lane { border:1px solid var(--line); border-radius:10px; padding:12px; display:grid; gap:10px; }
+  .lanes { display:grid; gap:12px; }
   .scroll { overflow-x:auto; }
-  #snapshot { max-width:100%; border-radius:8px; margin-top:10px; }
+  .snapshot { max-width:100%; border-radius:8px; }
   #msg { min-height:1.4em; }
   pre { white-space:pre-wrap; word-break:break-word; font-size:12px; color:var(--muted); margin:0; }
   details summary { cursor:pointer; }
+  dialog { border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--text); width:min(820px, 96vw); }
+  dialog::backdrop { background:#0007; }
+  .chips { display:flex; flex-wrap:wrap; gap:4px 12px; }
 </style>
 </head>
 <body>
 <main>
   <section>
-    <div class="row" style="justify-content:space-between">
+    <div class="row between">
       <h1>Gate ANPR</h1>
-      <div class="row">
-        <span class="pill" id="status">…</span>
-        <span class="pill" id="gate">…</span>
-      </div>
-    </div>
-    <div class="row" style="margin-top:12px">
-      <label class="switch"><input type="checkbox" id="recognition_enabled"> Recognition</label>
-      <label class="switch"><input type="checkbox" id="auto_open"> Automatic opening</label>
-      <button id="test">Test recognition (gate not operated)</button>
-      <button class="secondary" id="snap">Show camera + region</button>
+      <span class="pill" id="link">…</span>
     </div>
     <div id="msg" class="muted"></div>
-    <img id="snapshot" alt="" hidden>
+  </section>
+
+  <section>
+    <div class="row between">
+      <h2>Gates</h2>
+      <button id="add-lane">+ Add gate</button>
+    </div>
+    <div id="lanes" class="lanes"></div>
   </section>
 
   <section>
@@ -67,28 +73,25 @@
       <input type="text" id="label" placeholder="Vehicle / owner" maxlength="60">
       <button type="submit">Add</button>
     </form>
-    <p class="muted">Matching is exact after removing spaces and dashes. Nothing similar is ever accepted.</p>
+    <p class="muted">Matching is exact after removing spaces and dashes. Nothing similar is ever accepted. A plate is allowed at every gate unless you tick specific gates.</p>
     <div class="scroll"><table>
-      <thead><tr><th>Registration</th><th>Vehicle / owner</th><th>Enabled</th><th></th></tr></thead>
+      <thead><tr><th>Registration</th><th>Vehicle / owner</th><th>Gates</th><th>Enabled</th><th></th></tr></thead>
       <tbody id="plates"></tbody>
     </table></div>
   </section>
 
   <section>
-    <div class="row" style="justify-content:space-between">
+    <div class="row between">
       <h2>Access history</h2>
-      <select id="filter"><option value="">All</option><option value="1">Granted</option><option value="0">Not granted</option></select>
+      <div class="row">
+        <select id="lane-filter" aria-label="Gate"><option value="">All gates</option></select>
+        <select id="filter" aria-label="Result"><option value="">All results</option><option value="1">Granted</option><option value="0">Not granted</option></select>
+      </div>
     </div>
     <div class="scroll"><table>
-      <thead><tr><th>Time</th><th>Image</th><th>Registration</th><th>Result</th><th>Conf.</th><th>Details</th></tr></thead>
+      <thead><tr><th>Time</th><th>Gate</th><th>Image</th><th>Registration</th><th>Result</th><th>Conf.</th><th>Details</th></tr></thead>
       <tbody id="events"></tbody>
     </table></div>
-  </section>
-
-  <section>
-    <h2>Recognition settings</h2>
-    <form id="settings" class="grid"></form>
-    <div class="row" style="margin-top:12px"><button form="settings" type="submit">Save settings</button></div>
   </section>
 
   <section>
@@ -96,16 +99,48 @@
     <pre id="diag"></pre>
   </section>
 </main>
+
+<dialog id="editor">
+  <form id="lane-form" method="dialog" class="grid">
+    <h2 style="grid-column:1/-1" id="editor-title">Gate</h2>
+    <input type="hidden" name="id">
+    <label>Name<input type="text" name="name" maxlength="40" required></label>
+    <label>Access
+      <select name="access"><option value="approved">Approved vehicles only</option><option value="all">Allow all vehicles</option></select>
+    </label>
+    <label>Recognition camera (high resolution)<select name="camera_entity" data-list="cameras" required></select></label>
+    <label>Live view camera (dashboard)<select name="live_camera_entity" data-list="cameras" data-optional="Same as recognition camera"></select></label>
+    <label>Vehicle detection sensor<select name="trigger_entity" data-list="triggers" required></select></label>
+    <label>Gate OPEN control (relay or cover, never a toggle)<select name="gate_entity" data-list="gates" required></select></label>
+    <label>Gate position sensor (optional)<select name="gate_position_entity" data-list="positions" data-optional="None"></select></label>
+    <label>Vehicles approach the gate
+      <select name="direction"><option value="towards">Towards the camera (plate grows)</option><option value="away">Away from the camera (plate shrinks)</option></select>
+    </label>
+    <label>Minimum OCR confidence (%)<input type="number" name="min_confidence" required></label>
+    <label>Matching frames required<input type="number" name="min_consistent" required></label>
+    <label>Opening cooldown (s)<input type="number" name="cooldown" required></label>
+    <label>Minimum plate width (px)<input type="number" name="min_plate_width" required></label>
+    <label>Region left (%)<input type="number" name="region_left" required></label>
+    <label>Region top (%)<input type="number" name="region_top" required></label>
+    <label>Region right (%)<input type="number" name="region_right" required></label>
+    <label>Region bottom (%)<input type="number" name="region_bottom" required></label>
+    <p class="muted" style="grid-column:1/-1">New gates start with automatic opening off. Test in log-only mode first.</p>
+    <div class="row" style="grid-column:1/-1">
+      <button type="submit" value="save">Save gate</button>
+      <button type="button" class="secondary" id="editor-cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
+
 <script>
 const $ = (id) => document.getElementById(id);
-const LABELS = {
-  min_confidence: ["Minimum OCR confidence", "%"], min_consistent: ["Matching frames required", ""],
-  cooldown: ["Opening cooldown", "s"], min_plate_width: ["Minimum plate width", "px"],
-  region_left: ["Region left", "%"], region_top: ["Region top", "%"],
-  region_right: ["Region right", "%"], region_bottom: ["Region bottom", "%"],
-};
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const cls = (r) => r === "granted" ? "granted" : r.startsWith("approved") ? "approved" : "rejected";
+const DEFAULTS = {name: "", access: "approved", direction: "towards", min_confidence: 90, min_consistent: 2, cooldown: 60,
+                  min_plate_width: 60, region_left: 0, region_top: 0, region_right: 100, region_bottom: 100};
+let state = {lanes: [], plates: []};
+let approved = new Set();
+let entities = null;
 
 async function api(path, method = "GET", body) {
   const res = await fetch(path, {method, headers: {"Content-Type": "application/json"},
@@ -114,49 +149,134 @@ async function api(path, method = "GET", body) {
   return res.headers.get("content-type")?.includes("json") ? res.json() : res;
 }
 function say(text, bad) { $("msg").textContent = text; $("msg").style.color = bad ? "var(--bad)" : ""; }
+const laneName = (id) => state.lanes.find((l) => l.id === id)?.name || `Gate ${id}`;
 
-let settingsBuilt = false;
-let approved = new Set();
-async function refresh() {
-  const s = await api("api/state");
-  $("status").textContent = `Status: ${s.status}`;
-  const d = s.diagnostics;
-  $("gate").textContent = d.home_assistant_connected ? "Home Assistant connected" : "Home Assistant disconnected";
-  $("gate").className = "pill " + (d.home_assistant_connected ? "granted" : "rejected");
-  $("recognition_enabled").checked = s.settings.recognition_enabled;
-  $("auto_open").checked = s.settings.auto_open;
-  if (!settingsBuilt) {
-    $("settings").innerHTML = Object.entries(LABELS).map(([k, [name, unit]]) => {
-      const [lo, hi] = s.limits[k];
-      return `<label>${name}${unit ? ` (${unit})` : ""}<br><input type="number" name="${k}" min="${lo}" max="${hi}" step="1" required></label>`;
-    }).join("");
-    settingsBuilt = true;
-  }
-  for (const k of Object.keys(LABELS)) if (document.activeElement?.name !== k) $("settings").elements[k].value = s.settings[k];
-  approved = new Set(s.plates.map((p) => p.plate));
-  $("plates").innerHTML = s.plates.map((p) => `<tr>
+function renderLanes() {
+  $("lanes").innerHTML = state.lanes.map((l) => `
+    <div class="lane" data-lane="${l.id}">
+      <div class="row between">
+        <h3>${esc(l.name)} <span class="pill">${l.access === "all" ? "Allow all vehicles" : "Approved only"}</span> <span class="pill">${esc(l.status)}</span></h3>
+        <div class="row">
+          <label class="switch"><input type="checkbox" data-set="enabled" ${l.enabled ? "checked" : ""}> Recognition</label>
+          <label class="switch"><input type="checkbox" data-set="auto_open" ${l.auto_open ? "checked" : ""}> Automatic opening</label>
+        </div>
+      </div>
+      <div class="muted">Camera ${esc(l.camera_entity)} · trigger ${esc(l.trigger_entity)} · gate ${esc(l.gate_entity)} · vehicles ${l.direction === "towards" ? "approach the camera" : "drive away from the camera"} · region ${l.region_left}–${l.region_right}% × ${l.region_top}–${l.region_bottom}%</div>
+      <div class="row">
+        <button data-act="test">Test recognition (gate not operated)</button>
+        <button class="secondary" data-act="snap">Show camera + region</button>
+        <button class="secondary" data-act="edit">Edit</button>
+        <button class="danger" data-act="delete">Delete</button>
+      </div>
+      <img class="snapshot" hidden alt="">
+    </div>`).join("") || `<p class="muted">No gates yet. Add one to start.</p>`;
+  const sel = $("lane-filter"), keep = sel.value;
+  sel.innerHTML = `<option value="">All gates</option>` + state.lanes.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join("");
+  sel.value = keep;
+}
+
+function renderPlates() {
+  approved = new Set(state.plates.map((p) => p.plate));
+  $("plates").innerHTML = state.plates.map((p) => `<tr data-plate="${esc(p.plate)}">
       <td class="plate">${esc(p.plate)}</td><td>${esc(p.label)}</td>
-      <td><input type="checkbox" data-toggle="${esc(p.plate)}" data-label="${esc(p.label)}" ${p.enabled ? "checked" : ""} aria-label="Enable ${esc(p.plate)}"></td>
-      <td><button class="secondary" data-del="${esc(p.plate)}">Remove</button></td></tr>`).join("")
-    || `<tr><td colspan="4" class="muted">No approved registrations yet.</td></tr>`;
-  $("diag").textContent = JSON.stringify({diagnostics: d, engine: s.engine}, null, 2);
+      <td><div class="chips">${state.lanes.length > 1 ? state.lanes.map((l) => `<label class="switch"><input type="checkbox" data-plate-lane="${l.id}" ${p.lanes.includes(l.id) ? "checked" : ""}>${esc(l.name)}</label>`).join("") : ""}
+        <span class="muted">${p.lanes.length ? "" : "all gates"}</span></div></td>
+      <td><input type="checkbox" data-plate-enabled ${p.enabled ? "checked" : ""} aria-label="Enable ${esc(p.plate)}"></td>
+      <td><button class="secondary" data-del>Remove</button></td></tr>`).join("")
+    || `<tr><td colspan="5" class="muted">No approved registrations yet.</td></tr>`;
+}
+
+async function refresh() {
+  state = await api("api/state");
+  const d = state.diagnostics;
+  $("link").textContent = d.home_assistant_connected ? (d.mqtt_connected ? "Home Assistant + MQTT connected" : "MQTT disconnected: automatic opening blocked") : "Home Assistant disconnected";
+  $("link").className = "pill " + (d.home_assistant_connected && d.mqtt_connected ? "granted" : "rejected");
+  if (!$("editor").open) renderLanes();
+  if (!$("plates").contains(document.activeElement)) renderPlates();
+  $("diag").textContent = JSON.stringify({diagnostics: d, engine: state.engine}, null, 2);
   await loadEvents();
 }
 
 async function loadEvents() {
-  const rows = await api(`api/events?limit=100&granted=${$("filter").value}`);
+  const rows = await api(`api/events?limit=100&granted=${$("filter").value}&lane=${$("lane-filter").value}`);
   $("events").innerHTML = rows.map((e) => {
     const v = e.detail.verdict || {};
     const t = new Date(e.ts * 1000).toLocaleString();
     const img = e.image ? `<a href="images/${e.image}" target="_blank"><img class="thumb" src="images/${e.image}" alt="Detection ${e.id}" loading="lazy"></a>` : "";
     const plateImg = e.plate_image ? `<br><img class="plate-thumb" src="images/${e.plate_image}" alt="">` : "";
-    return `<tr><td>${esc(t)}${e.detail.test ? " <span class=muted>(test)</span>" : ""}</td><td>${img}</td>
-      <td class="plate">${esc(e.plate || "–")}${e.plate && !approved.has(e.plate) ? ` <button class="secondary" data-approve="${esc(e.plate)}" title="Add to approved vehicles">+ Approve</button>` : ""}${plateImg}</td>
+    const add = e.plate && !approved.has(e.plate) ? ` <button class="secondary" data-approve="${esc(e.plate)}" title="Add to approved vehicles">+ Approve</button>` : "";
+    return `<tr><td>${esc(t)}${e.detail.test ? " <span class=muted>(test)</span>" : ""}</td><td>${esc(e.lane || "")}</td><td>${img}</td>
+      <td class="plate">${esc(e.plate || "–")}${add}${plateImg}</td>
       <td class="${cls(e.result)}">${esc(e.result)}<br><span class="muted">${esc(e.reason)}</span></td>
       <td>${e.confidence ?? "–"}</td>
       <td><details><summary class="muted">${v.votes ?? 0}/${e.detail.frames} frames</summary><pre>${esc(JSON.stringify(e.detail, null, 1))}</pre></details></td></tr>`;
-  }).join("") || `<tr><td colspan="6" class="muted">No detections yet.</td></tr>`;
+  }).join("") || `<tr><td colspan="7" class="muted">No detections yet.</td></tr>`;
 }
+
+async function openEditor(lane) {
+  if (!entities) {
+    say("Loading Home Assistant entities…");
+    try { entities = await api("api/entities"); say(""); } catch (err) { say(err.message, true); return; }
+  }
+  const form = $("lane-form");
+  const data = {...DEFAULTS, ...(lane || {})};
+  for (const sel of form.querySelectorAll("select[data-list]")) {
+    const list = entities[sel.dataset.list] || [];
+    const current = data[sel.name] || "";
+    const opts = (sel.dataset.optional ? [`<option value="">${esc(sel.dataset.optional)}</option>`] : [`<option value="" disabled>Choose…</option>`])
+      .concat(list.map((x) => `<option value="${esc(x.id)}">${esc(x.name)} (${esc(x.id)})</option>`));
+    if (current && !list.some((x) => x.id === current)) opts.push(`<option value="${esc(current)}">${esc(current)}</option>`);
+    sel.innerHTML = opts.join("");
+    sel.value = current;
+  }
+  for (const [k, [lo, hi]] of Object.entries(state.limits)) { form.elements[k].min = lo; form.elements[k].max = hi; }
+  for (const el of form.elements) if (el.name && !el.dataset.list && data[el.name] !== undefined) el.value = data[el.name];
+  form.elements.id.value = lane ? lane.id : "";
+  $("editor-title").textContent = lane ? `Edit ${lane.name}` : "Add gate";
+  $("editor").showModal();
+}
+
+$("lane-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const body = Object.fromEntries(new FormData(ev.target));
+  for (const k of Object.keys(state.limits)) body[k] = Number(body[k]);
+  body.id = Number(body.id || 0);
+  try { const l = await api("api/lanes", "POST", body); $("editor").close(); say(`Saved ${l.name}`); refresh(); }
+  catch (err) { say(err.message, true); alert(err.message); }
+});
+$("editor-cancel").addEventListener("click", () => $("editor").close());
+$("add-lane").addEventListener("click", () => openEditor(null));
+
+$("lanes").addEventListener("change", async (ev) => {
+  const key = ev.target.dataset.set; if (!key) return;
+  const id = Number(ev.target.closest("[data-lane]").dataset.lane);
+  if (key === "auto_open" && ev.target.checked && !confirm(`Enable automatic gate opening for ${laneName(id)}?`)) { ev.target.checked = false; return; }
+  try { await api("api/lanes", "POST", {id, [key]: ev.target.checked}); say("Saved"); } catch (err) { say(err.message, true); refresh(); }
+});
+$("lanes").addEventListener("click", async (ev) => {
+  const act = ev.target.dataset.act; if (!act) return;
+  const box = ev.target.closest("[data-lane]"); const id = Number(box.dataset.lane);
+  const lane = state.lanes.find((l) => l.id === id);
+  try {
+    if (act === "edit") return openEditor(lane);
+    if (act === "delete") {
+      if (!confirm(`Delete ${lane.name}? Its history stays.`)) return;
+      await api(`api/lanes/${id}`, "DELETE", {}); say(`Deleted ${lane.name}`); return refresh();
+    }
+    if (act === "test") {
+      ev.target.disabled = true; say(`${lane.name}: capturing and recognising…`);
+      try { const e = await api(`api/lanes/${id}/test`, "POST", {}); say(`${lane.name} test: ${e.plate || "no plate"} → ${e.result} (${e.reason})`); refresh(); }
+      finally { ev.target.disabled = false; }
+    }
+    if (act === "snap") {
+      say(`${lane.name}: fetching camera snapshot…`);
+      const res = await api(`api/lanes/${id}/snapshot`);
+      const img = box.querySelector("img.snapshot");
+      img.src = URL.createObjectURL(await res.blob()); img.hidden = false; img.alt = `${lane.name} camera with the detection region outlined`;
+      say("Detection region outlined in orange.");
+    }
+  } catch (err) { say(err.message, true); }
+});
 
 $("add").addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -165,48 +285,33 @@ $("add").addEventListener("submit", async (ev) => {
     say(`Approved ${r.plate}`); $("plate").value = ""; $("label").value = ""; refresh();
   } catch (err) { say(err.message, true); }
 });
-$("plates").addEventListener("click", async (ev) => {
-  const del = ev.target.dataset.del, tog = ev.target.dataset.toggle;
-  try {
-    if (del && confirm(`Remove ${del} from the approved list?`)) { await api(`api/plates/${encodeURIComponent(del)}`, "DELETE", {}); say(`Removed ${del}`); }
-    if (tog) { await api("api/plates", "POST", {plate: tog, label: ev.target.dataset.label, enabled: ev.target.checked}); say(`${tog} ${ev.target.checked ? "enabled" : "disabled"}`); }
-    refresh();
-  } catch (err) { say(err.message, true); }
-});
-for (const key of ["recognition_enabled", "auto_open"]) {
-  $(key).addEventListener("change", async (ev) => {
-    if (key === "auto_open" && ev.target.checked && !confirm("Enable automatic gate opening for approved registrations?")) { ev.target.checked = false; return; }
-    try { await api("api/settings", "POST", {[key]: ev.target.checked}); say("Saved"); } catch (err) { say(err.message, true); refresh(); }
-  });
+async function savePlateRow(tr) {
+  const p = state.plates.find((x) => x.plate === tr.dataset.plate);
+  const lanes = [...tr.querySelectorAll("[data-plate-lane]:checked")].map((x) => Number(x.dataset.plateLane));
+  const enabled = tr.querySelector("[data-plate-enabled]").checked;
+  await api("api/plates", "POST", {plate: p.plate, label: p.label, enabled, lanes});
+  say(`${p.plate}: ${enabled ? "enabled" : "disabled"}, ${lanes.length ? "gates " + lanes.map(laneName).join(", ") : "all gates"}`);
 }
-$("settings").addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  const body = Object.fromEntries([...new FormData(ev.target)].map(([k, v]) => [k, Number(v)]));
-  try { await api("api/settings", "POST", body); say("Settings saved"); refresh(); } catch (err) { say(err.message, true); }
+$("plates").addEventListener("change", async (ev) => {
+  const tr = ev.target.closest("tr[data-plate]"); if (!tr) return;
+  try { await savePlateRow(tr); await refresh(); } catch (err) { say(err.message, true); refresh(); }
 });
-$("test").addEventListener("click", async () => {
-  $("test").disabled = true; say("Capturing and recognising…");
-  try { const e = await api("api/test", "POST", {}); say(`Test: ${e.plate || "no plate"} → ${e.result} (${e.reason})`); refresh(); }
-  catch (err) { say(err.message, true); } finally { $("test").disabled = false; }
-});
-$("snap").addEventListener("click", async () => {
-  say("Fetching camera snapshot…");
-  try {
-    const res = await api("api/snapshot");
-    $("snapshot").src = URL.createObjectURL(await res.blob()); $("snapshot").hidden = false;
-    $("snapshot").alt = "Camera snapshot with the detection region outlined";
-    say("Detection region outlined in orange.");
-  } catch (err) { say(err.message, true); }
+$("plates").addEventListener("click", async (ev) => {
+  if (!("del" in ev.target.dataset)) return;
+  const plate = ev.target.closest("tr").dataset.plate;
+  if (!confirm(`Remove ${plate} from the approved list?`)) return;
+  try { await api(`api/plates/${encodeURIComponent(plate)}`, "DELETE", {}); say(`Removed ${plate}`); refresh(); }
+  catch (err) { say(err.message, true); }
 });
 $("events").addEventListener("click", async (ev) => {
-  const plate = ev.target.dataset.approve;
-  if (!plate) return;
-  const label = prompt(`Approve ${plate}? Optional vehicle / owner name:`, "");
+  const plate = ev.target.dataset.approve; if (!plate) return;
+  const label = prompt(`Approve ${plate} at all gates? Optional vehicle / owner name:`, "");
   if (label === null) return;
   try { await api("api/plates", "POST", {plate, label, enabled: true}); say(`Approved ${plate}`); refresh(); }
   catch (err) { say(err.message, true); }
 });
 $("filter").addEventListener("change", loadEvents);
+$("lane-filter").addEventListener("change", loadEvents);
 refresh().catch((err) => say(err.message, true));
 setInterval(() => refresh().catch(() => {}), 15000);
 </script>

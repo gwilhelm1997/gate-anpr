@@ -4,6 +4,31 @@ Reads number plates of vehicles approaching the gate, compares them with your ap
 sends the gate an explicit **OPEN** command. Everything runs on your Home Assistant machine: no cloud,
 no Frigate, no subscription, no continuous recording.
 
+## Gates
+
+Each **gate** (lane) is one camera watching one gate controller. Add, edit or delete gates in the
+**Gate ANPR** panel (sidebar) with **+ Add gate**. Every field is a dropdown of your own entities:
+
+| Setting | Meaning |
+|---|---|
+| Recognition camera | High-resolution snapshot camera, e.g. Reolink **Snapshots Clear** (enable it first) |
+| Live view camera | Camera shown live on the dashboard (optional) |
+| Vehicle detection sensor | Reolink vehicle sensor that starts recognition |
+| Gate OPEN control | Relay on the controller's OPEN input, or a cover. Toggle channels are not offered |
+| Gate position sensor | Optional. When set, the gate is only commanded while it reports closed |
+| Access | **Approved vehicles only**, or **Allow all vehicles** (e.g. a way out) |
+| Vehicles approach the gate | **Towards the camera** (plate grows) or **Away from the camera** (plate shrinks) |
+| Rules | Confidence, matching frames, cooldown, minimum plate width and detection region |
+
+Every gate has its own **Recognition** and **Automatic opening** switches, its own Home Assistant
+device ("Gate ANPR *name*") and its own dashboard view. New gates start with automatic opening off.
+Gates that drive the same gate controller share its cooldown, so two cameras can never double-open it.
+
+**Allow all vehicles** still requires a consistent, approaching plate read in the region, so every
+opening is logged with a registration and an image. Use it where any vehicle may pass, such as an exit.
+
+Approved registrations apply to **all gates** unless you tick specific gates next to the plate.
+
 ## How it decides
 
 1. The Reolink **vehicle detection** sensor turns on.
@@ -16,11 +41,13 @@ no Frigate, no subscription, no continuous recording.
      more frames than every other reading combined;
    - every character is read with at least **Minimum OCR confidence** (default 90%);
    - it is a valid New Zealand registration (1–6 letters or digits);
-   - the vehicle is **approaching**: the plate is wide enough (**Minimum plate width**), its size is
-     not shrinking (a departing vehicle) and it is not sliding across the frame (a passing vehicle).
+   - the vehicle is **approaching the gate**: the plate is wide enough (**Minimum plate width**), its
+     size changes in the gate's direction (growing for "towards the camera", shrinking for "away") and
+     it is not sliding across the frame (a passing vehicle).
 5. The reading must match an enabled approved registration **exactly**. Spaces and dashes are ignored.
    Characters are never substituted (no 0/O or 1/I guessing) and nothing similar is accepted.
-6. Only then, and only with **Automatic opening** on, the app sends OPEN.
+6. Only then, and only with that gate's **Automatic opening** on, the app sends OPEN.
+   On an **Allow all vehicles** gate, step 5 is skipped.
 
 ## Gate safety
 
@@ -53,7 +80,8 @@ app and the **MQTT** integration (both already installed here).
    repository, or copy it by hand over Samba to `\\homeassistant\addons\gate_anpr`.
 3. Settings → Apps → Install app → ⋮ → **Check for updates**. **Gate ANPR** appears under
    **Local apps**. Install it. The first build downloads the dependencies and models and takes a few minutes.
-4. Check the **Configuration** tab. The defaults are already set for this installation.
+4. The **Configuration** tab holds recognition engine options. Its "First gate" fields are used once,
+   to create the first gate; after that, gates are managed in the Gate ANPR panel.
 5. Start the app and turn on **Watchdog**. On first start it creates the **Gate ANPR** dashboard in the
    sidebar, and the **Gate ANPR** panel for managing registrations.
 
@@ -87,13 +115,14 @@ The app creates the dashboard on first start with standard cards only:
 - recognition settings: confidence, matching frames, cooldown, plate width and region;
 - diagnostics: engine, self-test time, CPU, recognition time, link status and the last verdict.
 
-Edit it freely: an existing **Gate ANPR** dashboard is never overwritten. To get a fresh copy,
-delete the dashboard and restart the app. Turn off **Create dashboard** to stop that.
+It has one view per gate and is rebuilt when gates are added, renamed or removed, unless you have
+edited it yourself (then it is left alone). For a fresh copy, delete the dashboard and restart the app.
+Turn off **Create dashboard** to stop all of this.
 
 ## Automations
 
-Every decision fires the event `gate_anpr_access` with `plate`, `result`, `reason`, `granted`,
-`confidence`, `label` and `test`, for example for notifications:
+Every decision fires the event `gate_anpr_access` with `lane`, `lane_id`, `plate`, `result`, `reason`,
+`granted`, `confidence`, `label` and `test`, for example for notifications:
 
 ```yaml
 triggers:
@@ -114,7 +143,7 @@ actions:
 | `approved_monitor` | approved, but automatic opening is off (log-only mode) |
 | `approved_test` | approved during a test recognition |
 | `approved_not_opened` | approved, but a safety check blocked the command (see the reason) |
-| `rejected` | `not_approved`, `low_confidence`, `inconsistent`, `insufficient_frames`, `invalid_format`, `departing`, `passing`, `too_far`, `no_plate` |
+| `rejected` | `not_approved`, `low_confidence`, `inconsistent`, `insufficient_frames`, `invalid_format`, `wrong_direction`, `passing`, `too_far`, `no_plate` |
 | `error` | camera, Home Assistant or recognition failure; nothing was operated |
 
 ## Data and privacy

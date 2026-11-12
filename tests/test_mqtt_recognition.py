@@ -8,24 +8,30 @@ import numpy as np
 import pytest
 
 from gate_anpr import dashboard, recognition
-from gate_anpr.mqtt import ENTITIES, MqttBridge, discovery_messages
+from gate_anpr.mqtt import GLOBAL_ENTITIES, LANE_ENTITIES, MqttBridge, discovery_messages
 from gate_anpr.recognition import RecognitionEngine, Region
+from gate_anpr.store import Lane
 
 
 def test_discovery_payloads_are_complete():
-    msgs = dict(discovery_messages("0.1.0"))
-    assert len(msgs) == len(ENTITIES)
-    switch = json.loads(msgs["homeassistant/switch/gate_anpr/auto_open/config"])
-    assert switch["command_topic"] == "gate_anpr/auto_open/set" and switch["availability_topic"]
-    image = json.loads(msgs["homeassistant/image/gate_anpr/recent_1/config"])
-    assert image["image_topic"] == "gate_anpr/recent_1/image" and "state_topic" not in image
+    lanes = [Lane(id=1, name="Outside gate"), Lane(id=2, name="Inside gate")]
+    msgs = dict(discovery_messages("2.0.0", lanes))
+    assert len(msgs) == len(GLOBAL_ENTITIES) + 2 * len(LANE_ENTITIES)
+    switch = json.loads(msgs["homeassistant/switch/gate_anpr/l2_auto_open/config"])
+    assert switch["command_topic"] == "gate_anpr/l2_auto_open/set"
+    assert switch["device"]["name"] == "Gate ANPR Inside gate"
+    image = json.loads(msgs["homeassistant/image/gate_anpr/l1_recent_1/config"])
+    assert image["image_topic"] == "gate_anpr/l1_recent_1/image" and "state_topic" not in image
 
 
-def test_dashboard_uses_only_known_entities():
-    ids = dashboard.predicted_ids()
-    assert ids["auto_open"] == "switch.gate_anpr_automatic_opening"
-    config = json.dumps(dashboard.build(ids, "camera.gate_cam_fluent", "switch.relay", "/app/local_gate_anpr"))
-    assert "/app/local_gate_anpr" in config and "switch.gate_anpr_automatic_opening" in config
+def test_dashboard_has_a_view_per_lane():
+    lanes = [Lane(id=1, name="Outside gate", camera_entity="camera.a", gate_entity="switch.r"),
+             Lane(id=3, name="Inside gate", camera_entity="camera.b", gate_entity="switch.s")]
+    ids = dashboard.predicted_ids(lanes)
+    assert ids["l1_auto_open"] == "switch.gate_anpr_outside_gate_automatic_opening"
+    config = dashboard.build(lanes, ids, "/app/local_gate_anpr")
+    assert [v["title"] for v in config["views"]] == ["Outside gate", "Inside gate"]
+    assert "switch.gate_anpr_inside_gate_automatic_opening" in json.dumps(config)
 
 
 def free_port():
@@ -47,9 +53,10 @@ async def test_mqtt_round_trip_with_real_broker():
         commands.append((key, payload))
 
     async def on_connect():
+        await bridge.send("homeassistant/switch/gate_anpr/auto_open/config", "{}")
         connected.set()
 
-    bridge = MqttBridge({"host": "127.0.0.1", "port": port}, "test", on_command, on_connect)
+    bridge = MqttBridge({"host": "127.0.0.1", "port": port}, on_command, on_connect)
     task = asyncio.create_task(bridge.run())
     try:
         await asyncio.wait_for(connected.wait(), 10)

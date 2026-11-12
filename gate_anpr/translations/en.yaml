@@ -1,19 +1,19 @@
 configuration:
   camera_entity:
-    name: Recognition camera
-    description: High-resolution snapshot entity used for plate reading (Reolink "Snapshots Clear").
+    name: First gate - recognition camera
+    description: Used once, to create the first gate when none exists. Manage gates in the Gate ANPR panel.
   live_camera_entity:
-    name: Live view camera
-    description: Camera shown live on the dashboard. Leave empty to use the recognition camera.
+    name: First gate - live view camera
+    description: Used once, with the first gate. Leave empty to use the recognition camera.
   trigger_entity:
-    name: Vehicle detection sensor
-    description: Reolink vehicle detection binary sensor. Recognition starts when it turns on.
+    name: First gate - vehicle detection sensor
+    description: Used once, with the first gate.
   gate_entity:
-    name: Gate OPEN control
-    description: Relay switch wired to the gate controller's dedicated OPEN input, or a cover entity. Never a toggle input.
+    name: First gate - OPEN control
+    description: Used once, with the first gate. Relay on the gate's OPEN input, or a cover. Never a toggle.
   gate_position_entity:
-    name: Gate position sensor (optional)
-    description: Cover or binary sensor (on = open). When set, the gate is only commanded while it reports closed.
+    name: First gate - position sensor (optional)
+    description: Used once, with the first gate.
   detector_model:
     name: Plate detector model
     description: Larger input sizes find smaller (more distant) plates but use more CPU.

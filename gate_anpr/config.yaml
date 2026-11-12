@@ -1,5 +1,5 @@
 name: Gate ANPR
-version: "0.1.1"
+version: "2.0.0"
 slug: gate_anpr
 description: Local number-plate recognition that opens the gate for approved vehicles
 url: https://github.com/gwilhelm1997/gate-anpr
@@ -34,10 +34,10 @@ options:
   create_dashboard: true
   log_level: info
 schema:
-  camera_entity: match(^camera\.[a-z0-9_]+$)
+  camera_entity: match(^(camera\.[a-z0-9_]+)?$)
   live_camera_entity: match(^(camera\.[a-z0-9_]+)?$)
-  trigger_entity: match(^binary_sensor\.[a-z0-9_]+$)
-  gate_entity: match(^(cover|switch)\.[a-z0-9_]+$)
+  trigger_entity: match(^(binary_sensor\.[a-z0-9_]+)?$)
+  gate_entity: match(^((cover|switch)\.[a-z0-9_]+)?$)
   gate_position_entity: match(^((cover|binary_sensor)\.[a-z0-9_]+)?$)
   detector_model: list(yolo-v9-t-384-license-plate-end2end|yolo-v9-t-512-license-plate-end2end|yolo-v9-t-640-license-plate-end2end)
   ocr_model: list(cct-s-v2-global-model|cct-xs-v2-global-model)

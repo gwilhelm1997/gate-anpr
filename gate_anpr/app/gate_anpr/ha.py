@@ -25,6 +25,8 @@ class HomeAssistant:
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._ids = itertools.count(1)
         self._pending: dict[int, asyncio.Future] = {}
+        self._sub_id: int | None = None
+        self._triggers: Callable[[], set[str]] = set
         self.connected = False
 
     async def _request(self, method: str, path: str, timeout: float, **kw):
@@ -70,30 +72,52 @@ class HomeAssistant:
         finally:
             self._pending.pop(msg_id, None)
 
-    async def run(self, trigger_entity: str, on_trigger: Callable[[], Awaitable[None]],
+    async def states(self) -> list[dict]:
+        return await self._request("GET", "/states", 15) or []
+
+    async def _subscribe(self, ws) -> None:
+        entities = sorted(self._triggers())
+        self._sub_id = None
+        if entities:
+            self._sub_id = next(self._ids)
+            await ws.send_json({
+                "id": self._sub_id, "type": "subscribe_trigger",
+                "trigger": {"platform": "state", "entity_id": entities, "from": "off", "to": "on"},
+            })
+        _LOG.info("Watching vehicle sensors: %s", ", ".join(entities) or "none")
+
+    async def resubscribe(self) -> None:
+        """Lanes changed: swap the trigger subscription without dropping the connection."""
+        ws, old = self._ws, self._sub_id
+        if ws is None or ws.closed:
+            return
+        if old is not None:
+            await ws.send_json({"id": next(self._ids), "type": "unsubscribe_events", "subscription": old})
+        await self._subscribe(ws)
+
+    async def run(self, triggers: Callable[[], set[str]], on_trigger: Callable[[str], Awaitable[None]],
                   on_connected: Callable[[], Awaitable[None]] | None = None) -> None:
-        """Stay subscribed to the vehicle-detection edge; reconnect forever (HA restarts, updates)."""
+        """Stay subscribed to the vehicle-detection edges; reconnect forever (HA restarts, updates)."""
+        self._triggers = triggers
         delay = 2
         while True:
             try:
                 async with self._session.ws_connect(self._ws_url, heartbeat=30, max_msg_size=0) as ws:
                     await self._handshake(ws)
                     self._ws, delay = ws, 2
-                    sub_id = next(self._ids)
-                    await ws.send_json({
-                        "id": sub_id, "type": "subscribe_trigger",
-                        "trigger": {"platform": "state", "entity_id": trigger_entity, "from": "off", "to": "on"},
-                    })
+                    await self._subscribe(ws)
                     self.connected = True
-                    _LOG.info("Connected to Home Assistant; watching %s", trigger_entity)
+                    _LOG.info("Connected to Home Assistant")
                     if on_connected:
                         asyncio.create_task(on_connected())
                     async for raw in ws:
                         if raw.type != aiohttp.WSMsgType.TEXT:
                             break
                         msg = json.loads(raw.data)
-                        if msg.get("type") == "event" and msg.get("id") == sub_id:
-                            asyncio.create_task(on_trigger())
+                        if msg.get("type") == "event" and msg.get("id") == self._sub_id:
+                            trigger = msg.get("event", {}).get("variables", {}).get("trigger", {})
+                            if trigger.get("entity_id"):
+                                asyncio.create_task(on_trigger(trigger["entity_id"]))
                         elif msg.get("type") == "result":
                             fut = self._pending.get(msg.get("id"))
                             if fut and not fut.done():
@@ -101,7 +125,7 @@ class HomeAssistant:
                                     fut.set_result(msg.get("result"))
                                 else:
                                     fut.set_exception(HAError(str(msg.get("error"))))
-                            elif msg.get("id") == sub_id and not msg.get("success"):
+                            elif msg.get("id") == self._sub_id and not msg.get("success"):
                                 raise HAError(f"subscribe_trigger rejected: {msg.get('error')}")
             except asyncio.CancelledError:
                 raise
