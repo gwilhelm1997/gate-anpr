@@ -137,3 +137,15 @@ def test_entity_pickers_hide_toggle_inputs():
     c = entity_choices(states)
     assert [g["id"] for g in c["gates"]] == ["switch.sonoff_100219c178_2"]
     assert [t["id"] for t in c["triggers"]] == ["binary_sensor.gate_cam_vehicle"]
+
+
+def test_prune_sweeps_orphan_and_expired_images(tmp_path):
+    import os
+    store = Store(tmp_path)
+    orphan_old, orphan_new, stale = (store.images / n for n in ("orphan.jpg", "fresh.jpg", "stale.jpg"))
+    for p in (orphan_old, orphan_new, stale):
+        p.write_bytes(b"x")
+    os.utime(orphan_old, (time.time() - 7200,) * 2)
+    os.utime(stale, (time.time() - 40 * 86400,) * 2)
+    store.prune(30)
+    assert not orphan_old.exists() and not stale.exists() and orphan_new.exists()

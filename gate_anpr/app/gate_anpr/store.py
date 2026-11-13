@@ -305,6 +305,18 @@ class Store:
             for name in (row["image"], row["plate_image"]):
                 if name:
                     (self.images / name).unlink(missing_ok=True)
+        # Sweep files no event references (or older than retention), skipping ones still being written.
+        with self._lock:
+            kept = {n for r in self._db.execute("SELECT image, plate_image FROM events")
+                    for n in (r["image"], r["plate_image"]) if n}
+        now = time.time()
+        for path in self.images.iterdir():
+            age = path.stat().st_mtime
+            if age < cutoff or (path.name not in kept and now - age > 3600):
+                path.unlink(missing_ok=True)
+        if old:
+            with self._lock:
+                self._db.execute("VACUUM")
         return len(old)
 
     def close(self) -> None:

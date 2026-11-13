@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.4.1
+
+- Housekeeping also deletes snapshot files no event refers to and anything older than the retention period, and compacts the database.
+
 ## 2.4.0
 
 - Exclusion zones per gate: rectangles (e.g. parking spots, the road) where plates are always ignored;
