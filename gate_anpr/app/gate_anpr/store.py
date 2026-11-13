@@ -25,7 +25,7 @@ CHOICES = {"direction": ("towards", "away"), "access": ("approved", "all")}
 LIMITS = {
     "min_confidence": (50, 99),
     "min_consistent": (1, 5),
-    "cooldown": (10, 900),
+    "cooldown": (0, 900),
     "min_plate_width": (20, 800),
     "region_left": (0, 100),
     "region_top": (0, 100),
