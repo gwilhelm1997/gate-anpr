@@ -19,7 +19,7 @@ LANE_ENTITIES: dict[str, tuple[str, dict]] = {
     "min_confidence": ("number", {"name": "Minimum OCR confidence", "icon": "mdi:target",
                                   **_PCT, "min": 50, "max": 99}),
     "min_consistent": ("number", {"name": "Matching frames required", "icon": "mdi:image-multiple",
-                                  "min": 2, "max": 5, "step": 1, "mode": "box", "entity_category": "config"}),
+                                  "min": 1, "max": 5, "step": 1, "mode": "box", "entity_category": "config"}),
     "cooldown": ("number", {"name": "Opening cooldown", "icon": "mdi:timer-sand", "unit_of_measurement": "s",
                             "min": 10, "max": 900, "step": 5, "mode": "box", "entity_category": "config"}),
     "min_plate_width": ("number", {"name": "Minimum plate width", "icon": "mdi:arrow-expand-horizontal",

@@ -24,7 +24,7 @@ _ENTITY = {
 CHOICES = {"direction": ("towards", "away"), "access": ("approved", "all")}
 LIMITS = {
     "min_confidence": (50, 99),
-    "min_consistent": (2, 5),
+    "min_consistent": (1, 5),
     "cooldown": (10, 900),
     "min_plate_width": (20, 800),
     "region_left": (0, 100),

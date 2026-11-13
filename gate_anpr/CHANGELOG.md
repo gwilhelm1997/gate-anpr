@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.4.2
+
+- Matching frames required can be 1, for slow battery cameras that only deliver one useful frame (direction cannot be checked then).
+
 ## 2.4.1
 
 - Housekeeping also deletes snapshot files no event refers to and anything older than the retention period, and compacts the database.

@@ -86,3 +86,11 @@ def test_nearest_plate_wins_over_parked_car_behind():
 
 def test_no_plates():
     assert evaluate(frames([], []), RULES).reason == "no_plate"
+
+
+def test_single_frame_lane_accepts_one_confident_read():
+    one = Rules(min_confidence=0.9, min_consistent=1, min_plate_width=40)
+    frames = [Frame(0, 0, 3840, 2160, [PlateRead("GWL417", "GWL417", 0.99, 0.9, (100, 100, 150, 112))]),
+              Frame(1, 0, 3840, 2160, [])]
+    v = evaluate(frames, one)
+    assert v.accepted and v.plate == "GWL417"

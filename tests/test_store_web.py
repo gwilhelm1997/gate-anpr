@@ -40,7 +40,7 @@ def test_single_gate_settings_migrate_to_first_lane(tmp_path):
     assert len(store.lanes()) == 1
 
 
-@pytest.mark.parametrize("key,value", [("min_confidence", 101), ("min_consistent", 1), ("auto_open", "maybe"),
+@pytest.mark.parametrize("key,value", [("min_confidence", 101), ("min_consistent", 0), ("auto_open", "maybe"),
                                        ("nope", 1), ("gate_entity", "light.porch"), ("access", "everyone"),
                                        ("direction", "sideways"), ("name", "")])
 def test_lane_validation(key, value):
