@@ -249,3 +249,35 @@ async def test_parallel_snapshots_halve_time_to_decision(make, fake_ha):
         timings[parallel] = event["detail"]["duration_s"]
     # Two 0.4 s snapshots: 0.8 s one after the other, about 0.55 s with two in flight.
     assert timings[1] >= 0.78 and timings[2] <= 0.65, timings
+
+
+async def test_motion_sensor_starts_reading_before_vehicle_sensor(make, fake_ha):
+    svc = make([b"far", b"near"], auto_open=True, lanes=[lane_data(motion_entity="binary_sensor.gate_cam_motion")])
+    assert svc.triggers() == {"binary_sensor.gate_cam_vehicle", "binary_sensor.gate_cam_motion"}
+    await svc.on_vehicle("binary_sensor.gate_cam_motion")
+    await asyncio.sleep(0.3)
+    assert fake_ha.calls == [("switch", "turn_on", RELAY)]
+    detail = svc.store.events()[0]["detail"]
+    assert detail["trigger"] == "motion" and len(detail["frame_t"]) == 2 and detail["open_command_s"] is not None
+
+
+async def test_motion_without_a_plate_is_not_logged(make, fake_ha):
+    svc = make([], auto_open=True, lanes=[lane_data(motion_entity="binary_sensor.gate_cam_motion")])
+    event = await svc.run_session(1, test=False, early=True)
+    assert event["reason"] == "no_plate" and not svc.store.events() and not fake_ha.calls
+
+
+async def test_vehicle_trigger_during_unsuccessful_motion_read_reads_again(make, fake_ha):
+    svc = make([], auto_open=True, lanes=[lane_data(motion_entity="binary_sensor.gate_cam_motion")])
+    original, calls = svc._session, []
+
+    async def session(rt, test, early=False):
+        calls.append(early)
+        fake_ha.frames = [] if len(calls) == 1 else [b"far", b"near", b"near"]  # car arrives for the second read
+        return await original(rt, test, early)
+
+    svc._session = session
+    first, second = await asyncio.gather(svc.run_session(1, False, early=True), svc.run_session(1, False))
+    assert second is None and calls == [True, False]
+    assert first["result"] == "granted" and fake_ha.calls == [("switch", "turn_on", RELAY)]
+    assert len(svc.store.events()) == 1  # the empty motion read is not logged

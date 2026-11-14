@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.0
+
+- Faster opening: each lane can name a camera motion sensor. Reading starts on motion, which the camera reports 1-6 s before its AI vehicle detection; the video stream also connects earlier. The same plate, confidence and direction rules decide, and motion with no plate read is not logged.
+- A vehicle detected while an unsuccessful read is still running gets a fresh read instead of being ignored.
+- Events record when each frame was taken and when the OPEN command was sent (seconds after the trigger).
+
 ## 2.4.3
 
 - Opening cooldown can be 0 to 900 s in 1 s steps (was 10 s minimum).

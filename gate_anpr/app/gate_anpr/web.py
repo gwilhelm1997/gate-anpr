@@ -34,6 +34,7 @@ def entity_choices(states: list[dict]) -> dict:
     return {
         "cameras": sort(by_domain.get("camera", [])),
         "triggers": sort([s for s in binary if "vehicle" in s["entity_id"]]) or sort(binary),
+        "motions": sort([s for s in binary if "motion" in s["entity_id"]]) or sort(binary),
         "gates": sort(gates),
         "positions": sort(binary + by_domain.get("cover", [])),
     }

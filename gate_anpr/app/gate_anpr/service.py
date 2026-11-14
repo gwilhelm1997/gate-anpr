@@ -35,6 +35,7 @@ class LaneRuntime:
         self.status = "idle"
         self.last_event: dict | None = None
         self.parked = ParkedFilter()
+        self.retrigger = False  # a trigger arrived while a read was running
 
     def region(self) -> Region:
         s = self.lane
@@ -100,7 +101,10 @@ class GateAnpr:
         return ctl
 
     def triggers(self) -> set[str]:
-        return {rt.lane.trigger_entity for rt in self.lanes.values()}
+        out = set()
+        for rt in self.lanes.values():
+            out |= {rt.lane.trigger_entity, rt.lane.motion_entity} - {""}
+        return out
 
     async def save_lane(self, data: dict, lane_id: int = 0) -> Lane:
         if lane_id in self.lanes and data and set(data) <= set(LANE_CONTROLS):
@@ -212,23 +216,37 @@ class GateAnpr:
     # sessions -------------------------------------------------------------
     async def on_vehicle(self, entity_id: str) -> None:
         for lane_id, rt in list(self.lanes.items()):
-            if rt.lane.trigger_entity == entity_id and rt.lane.enabled:
+            if not rt.lane.enabled:
+                continue
+            if rt.lane.trigger_entity == entity_id:
                 asyncio.create_task(self.run_session(lane_id, test=False))
+            elif rt.lane.motion_entity == entity_id:
+                asyncio.create_task(self.run_session(lane_id, test=False, early=True))
 
-    async def run_session(self, lane_id: int, test: bool) -> dict | None:
+    async def run_session(self, lane_id: int, test: bool, early: bool = False) -> dict | None:
+        """early: started by camera motion, before the vehicle sensor. Same rules decide; a read that
+        finds no plate is not logged. A trigger during an unsuccessful read gets a fresh read."""
         rt = self.lanes.get(lane_id)
         if rt is None:
             return None
         if rt.lock.locked():
-            _LOG.info("%s: recognition already running; ignoring overlapping trigger", rt.lane.name)
+            if not test:
+                rt.retrigger = True
+            _LOG.debug("%s: recognition already running; trigger noted", rt.lane.name)
             return None
         async with rt.lock:
             try:
-                return await self._session(rt, test)
+                while True:
+                    rt.retrigger = False
+                    event = await self._session(rt, test, early)
+                    if test or not rt.retrigger or event is None or event["detail"]["verdict"]["accepted"]:
+                        return event
+                    _LOG.info("%s: vehicle still present after an unsuccessful read; reading again", rt.lane.name)
+                    early = False
             finally:
                 await self.publish_status(rt, "idle" if self.engine.ready else "engine not ready")
 
-    async def _session(self, rt: LaneRuntime, test: bool) -> dict:
+    async def _session(self, rt: LaneRuntime, test: bool, early: bool = False) -> dict:
         lane = rt.lane
         started_wall, started = time.time(), self._clock()
         await self.publish_status(rt, "capturing")
@@ -256,6 +274,7 @@ class GateAnpr:
         rt.parked.remember(all_frames)
         approved = self.store.is_approved(verdict.plate, lane.id) if verdict.accepted else None
         allowed = bool(approved) or (verdict.accepted and lane.access == "all")
+        decided = None
         if error:
             result, reason, detail = "error", "error", error
         elif not verdict.accepted:
@@ -272,6 +291,7 @@ class GateAnpr:
             result, reason, detail = ("approved_not_opened", "controls_offline",
                                       "dashboard controls unreachable; automatic opening needs MQTT")
         else:
+            decided = self._clock() - started
             gate_result, detail = await self.gate(lane).open(lane.cooldown)
             result = "granted" if gate_result in ("opened", "already_open") else "approved_not_opened"
             reason = gate_result
@@ -297,13 +317,16 @@ class GateAnpr:
                 "ignored": ignored,
                 "verdict": {k: v for k, v in asdict(verdict).items() if k != "best_box"},
                 "frames": len(frames),
+                "trigger": "motion" if early else ("test" if test else "vehicle"),
+                "frame_t": [round(f.t, 2) for f in frames],  # seconds after the trigger each frame was taken
+                "open_command_s": round(decided, 2) if decided is not None else None,
                 "timings_ms": timings,
                 "duration_s": round(self._clock() - started, 2),
                 "reads": [[{"text": r.text, "ocr": r.ocr_conf, "width": r.width} for r in f.reads] for f in frames],
             },
         }
-        if not frames and not error:
-            return event
+        if (not frames or (early and not verdict.plate)) and not error:
+            return event  # nothing read (motion without a vehicle is common): not worth an entry
         event["id"] = self.store.add_event(event)
         await self._save_images(event, jpegs, verdict, region)
         rt.last_event = event

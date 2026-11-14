@@ -14,6 +14,7 @@ _ENTITY = {
     "camera_entity": re.compile(r"camera\.[a-z0-9_]+"),
     "live_camera_entity": re.compile(r"(camera\.[a-z0-9_]+)?"),
     "trigger_entity": re.compile(r"binary_sensor\.[a-z0-9_]+"),
+    "motion_entity": re.compile(r"(binary_sensor\.[a-z0-9_]+)?"),
     "gate_entity": re.compile(r"(cover|switch)\.[a-z0-9_]+"),
     "gate_position_entity": re.compile(r"((cover|binary_sensor)\.[a-z0-9_]+)?"),
     "stream_url": re.compile(r"(rtsps?://[^\s]{3,300})?"),
@@ -49,6 +50,7 @@ class Lane:
     camera_entity: str = ""
     live_camera_entity: str = ""
     trigger_entity: str = ""
+    motion_entity: str = ""  # optional earlier trigger (camera motion): reading starts before AI detection
     gate_entity: str = ""
     gate_position_entity: str = ""
     stream_url: str = ""  # optional RTSP stream (contains the camera password: never returned or logged)

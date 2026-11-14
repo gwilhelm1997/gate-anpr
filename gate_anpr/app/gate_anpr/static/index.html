@@ -124,6 +124,7 @@
     </label>
     <label class="switch" style="grid-column:1/-1;flex-direction:row" id="stream-clear-row" hidden><input type="checkbox" name="stream_clear"> Remove the saved video stream</label>
     <label>Vehicle detection sensor<input type="text" name="trigger_entity" data-list="triggers" placeholder="Type to search…" autocomplete="off" spellcheck="false" required><div class="picker" hidden></div></label>
+    <label>Motion sensor to start reading earlier (optional)<input type="text" name="motion_entity" data-list="motions" placeholder="None" autocomplete="off" spellcheck="false"><div class="picker" hidden></div></label>
     <label>Gate OPEN control (relay or cover, never a toggle)<input type="text" name="gate_entity" data-list="gates" placeholder="Type to search…" autocomplete="off" spellcheck="false" required><div class="picker" hidden></div></label>
     <label>Gate position sensor (optional)<input type="text" name="gate_position_entity" data-list="positions" placeholder="None" autocomplete="off" spellcheck="false"><div class="picker" hidden></div></label>
     <label>Vehicles approach the gate
@@ -269,7 +270,7 @@ $("lane-form").addEventListener("submit", async (ev) => {
 });
 
 // Entity search: every typed word must appear in the friendly name or entity ID, in any order.
-const HINTS = {cameras: /snapshots_clear|clear/, triggers: /vehicle/, gates: /open/, positions: /gate|door|contact/};
+const HINTS = {cameras: /snapshots_clear|clear/, triggers: /vehicle/, motions: /motion/, gates: /open/, positions: /gate|door|contact/};
 function matches(input) {
   const list = (entities && entities[input.dataset.list]) || [];
   const words = input.value.toLowerCase().split(/[\s._-]+/).filter(Boolean);
