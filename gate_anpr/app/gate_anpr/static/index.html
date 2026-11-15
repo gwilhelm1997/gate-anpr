@@ -192,7 +192,7 @@ function renderLanes() {
       <div class="muted">Camera ${esc(l.camera_entity)} · trigger ${esc(l.trigger_entity)} · gate ${esc(l.gate_entity)} · region ${l.region_left}–${l.region_right}% × ${l.region_top}–${l.region_bottom}%</div>
       <div class="row">
         <button data-act="test">Test recognition (gate not operated)</button>
-        <button class="secondary" data-act="snap">Show camera + region</button>
+        <button class="secondary" data-act="snap">Camera + detection area</button>
         <button class="secondary" data-act="edit">Edit</button>
         <button class="danger" data-act="delete">Delete</button>
       </div>
@@ -379,12 +379,10 @@ $("lanes").addEventListener("click", async (ev) => {
       try { const e = await api(`api/lanes/${id}/test`, "POST", {}); say(`${lane.name} test: ${e.plate || "no plate"} → ${e.result} (${e.reason})`); refresh(); }
       finally { ev.target.disabled = false; }
     }
-    if (act === "snap") {
-      say(`${lane.name}: fetching camera snapshot…`);
-      const res = await api(`api/lanes/${id}/snapshot`);
-      const img = box.querySelector("img.snapshot");
-      img.src = URL.createObjectURL(await res.blob()); img.hidden = false; img.alt = `${lane.name} camera with the detection region outlined`;
-      say("Detection region in orange, exclusion zones in red.");
+    if (act === "snap") {  // open the editor on the picture so the area can be dragged and saved
+      await openEditor(lane);
+      $("region-load").click();
+      $("region-load").scrollIntoView({block: "start"});
     }
   } catch (err) { say(err.message, true); }
 });

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.7.2
+
+- "Camera + detection area" opens the gate editor on the camera picture, ready to drag the area and save.
+
 ## 2.7.1
 
 - The detection-area picture is downscaled like the other camera previews, so it loads through remote access.
