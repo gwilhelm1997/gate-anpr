@@ -76,10 +76,8 @@ rtsp://USER:PASSWORD@CAMERA-IP:554/Preview_01_main
      more frames than every other reading combined;
    - every character is read with at least **Minimum OCR confidence** (default 90%);
    - it is a valid New Zealand registration (1–6 letters or digits);
-   - the vehicle is **near the gate**: the plate is wide enough (**Minimum plate width**) and it is
-     not sliding across the frame (a passing vehicle). On an **Allow all vehicles** gate its size must
-     also change in the gate's direction (growing for "towards the camera", shrinking for "away");
-     approved registrations open whichever way the vehicle is moving.
+   - the plate is wide enough (**Minimum plate width**) and is not just sliding across the frame
+     (a passing vehicle). The direction of travel is not checked.
 5. The reading must match an enabled approved registration **exactly**. Spaces and dashes are ignored.
    Characters are never substituted (no 0/O or 1/I guessing) and nothing similar is accepted.
 6. Only then, and only with that gate's **Automatic opening** on, the app sends OPEN.
@@ -179,7 +177,7 @@ actions:
 | `approved_monitor` | approved, but automatic opening is off (log-only mode) |
 | `approved_test` | approved during a test recognition |
 | `approved_not_opened` | approved, but a safety check blocked the command (see the reason) |
-| `rejected` | `not_approved`, `low_confidence`, `inconsistent`, `insufficient_frames`, `invalid_format`, `wrong_direction`, `passing`, `too_far`, `no_plate` |
+| `rejected` | `not_approved`, `low_confidence`, `inconsistent`, `insufficient_frames`, `invalid_format`, `passing`, `too_far`, `no_plate` |
 | `error` | camera, Home Assistant or recognition failure; nothing was operated |
 
 ## Data and privacy

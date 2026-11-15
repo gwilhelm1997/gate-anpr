@@ -152,14 +152,8 @@ async def test_approved_plate_opens_in_either_direction(make, fake_ha):
     assert event["result"] == "granted"
 
 
-async def test_allow_all_lane_rejects_wrong_direction(make, fake_ha):
+async def test_allow_all_lane_opens_in_either_direction(make, fake_ha):
     svc = make([b"near", b"far"], auto_open=True, lanes=[lane_data(access="all")])
-    event = await svc.run_session(1, test=False)
-    assert event["reason"] == "wrong_direction" and not fake_ha.calls
-
-
-async def test_away_lane_accepts_shrinking_plate(make, fake_ha):
-    svc = make([b"near", b"far"], auto_open=True, lanes=[lane_data(direction="away")])
     assert (await svc.run_session(1, test=False))["result"] == "granted"
 
 

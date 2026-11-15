@@ -43,9 +43,7 @@ class LaneRuntime:
 
     def rules(self) -> Rules:
         s = self.lane
-        # Approved plates open in either direction; only allow-all lanes need the direction to exclude traffic.
-        return Rules(s.min_confidence / 100, s.min_consistent, s.min_plate_width, s.direction,
-                     check_direction=s.access == "all")
+        return Rules(s.min_confidence / 100, s.min_consistent, s.min_plate_width)
 
 
 class GateAnpr:
@@ -211,7 +209,7 @@ class GateAnpr:
             lane = rt.lane
             out.update(lane=lane.name, camera_entity=lane.camera_entity, trigger_entity=lane.trigger_entity,
                        gate_entity=lane.gate_entity, gate_position_entity=lane.gate_position_entity or None,
-                       access=lane.access, direction=lane.direction, stream=self.stream_info(lane.id),
+                       access=lane.access, stream=self.stream_info(lane.id),
                        cooldown_remaining=round(self.gate(lane).cooldown_remaining(lane.cooldown)))
         return out
 

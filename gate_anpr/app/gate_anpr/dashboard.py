@@ -58,7 +58,7 @@ def _lane_view(lane, ids: dict, manage_url: str | None) -> dict:
                 {"type": "attribute", "entity": e("status"), "attribute": "gate_check", "name": "Gate check"},
                 {"type": "attribute", "entity": e("status"), "attribute": "cooldown_remaining",
                  "name": "Cooldown remaining", "suffix": "s"},
-                {"type": "section", "label": f"Access: {access} · direction: {lane.direction}"},
+                {"type": "section", "label": f"Access: {access}"},
             ]},
             {"type": "entities", "title": "Last recognition", "entities": [
                 {"entity": e("last_plate")},

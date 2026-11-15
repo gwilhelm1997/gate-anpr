@@ -1,12 +1,10 @@
-"""Multi-frame consensus and approach checks. Pure functions: no I/O."""
+"""Multi-frame consensus and passing-vehicle checks. Pure functions: no I/O."""
 
 from collections import Counter
 from dataclasses import dataclass, field
 
 from .plates import is_valid_nz
 
-# Detector boxes jitter a few percent between frames; beyond this the plate is moving away.
-SHRINK_TOLERANCE = 0.06
 # A plate that slides this far across the frame without growing is passing, not approaching.
 MAX_LATERAL_SHIFT = 0.25
 LATERAL_GROWTH_EXCUSE = 1.15
@@ -47,8 +45,6 @@ class Rules:
     min_confidence: float = 0.90
     min_consistent: int = 2
     min_plate_width: int = 60
-    direction: str = "towards"  # vehicles approach the gate towards (plate grows) or away from the camera
-    check_direction: bool = True  # False: either direction counts as approaching (approved-only lanes)
 
 
 @dataclass(frozen=True)
@@ -66,7 +62,7 @@ class Verdict:
 
 
 def evaluate(frames: list[Frame], rules: Rules) -> Verdict:
-    """Accept a registration only when enough frames agree and the vehicle is approaching."""
+    """Accept a registration only when enough frames agree and the vehicle is not just passing."""
     # The largest plate in the region is the vehicle nearest the gate.
     nearest = [(f, max(f.reads, key=lambda r: r.area)) for f in frames if f.reads]
     if not nearest:
@@ -102,14 +98,8 @@ def evaluate(frames: list[Frame], rules: Rules) -> Verdict:
 
     if r1.width < rules.min_plate_width:
         return Verdict(False, "too_far", **base)
-    # 'Approaching the gate' means growing on a towards-lane and shrinking on an away-lane.
-    towards, away = growth, 1 / max(growth, 1e-6)
-    if not rules.check_direction:
-        progress = max(towards, away)
-    else:
-        progress = towards if rules.direction == "towards" else away
-    if progress < 1 - SHRINK_TOLERANCE:
-        return Verdict(False, "wrong_direction", **base)
-    if lateral > MAX_LATERAL_SHIFT and progress < LATERAL_GROWTH_EXCUSE:
+    # Direction is not checked: a plate may grow or shrink. One that only slides sideways is passing.
+    size_change = max(growth, 1 / max(growth, 1e-6))
+    if lateral > MAX_LATERAL_SHIFT and size_change < LATERAL_GROWTH_EXCUSE:
         return Verdict(False, "passing", **base)
     return Verdict(True, "consistent", **base)

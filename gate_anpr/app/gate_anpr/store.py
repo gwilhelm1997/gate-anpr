@@ -54,7 +54,7 @@ class Lane:
     gate_entity: str = ""
     gate_position_entity: str = ""
     stream_url: str = ""  # optional RTSP stream (contains the camera password: never returned or logged)
-    direction: str = "towards"  # vehicles drive towards the camera (plate grows) or away from it
+    direction: str = "towards"  # unused since 2.7.0 (direction is not checked); kept so saved gates load
     min_confidence: int = 90
     min_consistent: int = 2
     cooldown: int = 60

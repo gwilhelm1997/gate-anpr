@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.7.0
+
+- The direction check is removed on every gate: plates are read whichever way the vehicle moves. The passing-vehicle, width, confidence and matching-frame checks stay.
+- The gate editor can show a camera picture and let you drag the detection area on it; the region fields fill in automatically.
+
 ## 2.6.0
 
 - Approved registrations open whichever way the vehicle is moving; the direction check now applies only to Allow all vehicles gates. Plate width, confidence, matching frames and the passing-vehicle check are unchanged.
