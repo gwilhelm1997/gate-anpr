@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.7.1
+
+- The detection-area picture is downscaled like the other camera previews, so it loads through remote access.
+- Server errors show as a short message instead of a full HTML page.
+
 ## 2.7.0
 
 - The direction check is removed on every gate: plates are read whichever way the vehicle moves. The passing-vehicle, width, confidence and matching-frame checks stay.

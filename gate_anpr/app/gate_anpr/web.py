@@ -139,10 +139,9 @@ def create_app(service, allowed_ips: set) -> web.Application:
         rt = service.lanes[lane_id(request)]
         try:
             jpeg = await service.ha.camera_image(rt.lane.camera_entity)
-            if request.query.get("raw"):  # plain picture for drawing the detection area
-                return web.Response(body=jpeg, content_type="image/jpeg")
-            frame, _plate = await service.engine.annotate(jpeg, None, "", rt.region(), 1280,
-                                                          rt.lane.exclusion_boxes())
+            raw = bool(request.query.get("raw"))  # plain picture for drawing the detection area
+            frame, _plate = await service.engine.annotate(jpeg, None, "", None if raw else rt.region(), 1280,
+                                                          () if raw else rt.lane.exclusion_boxes())
         except Exception as err:  # noqa: BLE001
             raise web.HTTPBadGateway(text=f"snapshot failed: {err}") from err
         return web.Response(body=frame, content_type="image/jpeg")

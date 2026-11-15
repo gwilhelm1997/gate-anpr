@@ -169,7 +169,10 @@ let entities = null;
 async function api(path, method = "GET", body) {
   const res = await fetch(path, {method, headers: {"Content-Type": "application/json"},
                                   body: body === undefined ? undefined : JSON.stringify(body)});
-  if (!res.ok) throw new Error(await res.text() || res.statusText);
+  if (!res.ok) {
+    const text = (await res.text()).trim();
+    throw new Error(text && !text.startsWith("<") ? text : `HTTP ${res.status} ${res.statusText} (camera or connection busy; try again)`);
+  }
   return res.headers.get("content-type")?.includes("json") ? res.json() : res;
 }
 function say(text, bad) { $("msg").textContent = text; $("msg").style.color = bad ? "var(--bad)" : ""; }

@@ -126,9 +126,10 @@ def _annotate(jpeg: bytes, box, label: str, region: Region, max_width: int,
         pad = max(4, (x2 - x1) // 6)
         crop = img[max(0, y1 - pad): y2 + pad, max(0, x1 - pad): x2 + pad]
         plate_jpeg = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 90])[1].tobytes()
-    rx1, ry1, rx2, ry2 = region.pixels(width, height)
     thick = max(2, width // 640)
-    cv2.rectangle(img, (rx1, ry1), (rx2, ry2), (255, 200, 0), thick)
+    if region is not None:  # None: plain picture, only downscaled
+        rx1, ry1, rx2, ry2 = region.pixels(width, height)
+        cv2.rectangle(img, (rx1, ry1), (rx2, ry2), (255, 200, 0), thick)
     for l, t, r, b in exclusions:
         cv2.rectangle(img, (int(l * width), int(t * height)), (int(r * width), int(b * height)), (0, 0, 255), thick)
     if box:
