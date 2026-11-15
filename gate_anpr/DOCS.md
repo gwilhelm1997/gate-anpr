@@ -76,9 +76,10 @@ rtsp://USER:PASSWORD@CAMERA-IP:554/Preview_01_main
      more frames than every other reading combined;
    - every character is read with at least **Minimum OCR confidence** (default 90%);
    - it is a valid New Zealand registration (1–6 letters or digits);
-   - the vehicle is **approaching the gate**: the plate is wide enough (**Minimum plate width**), its
-     size changes in the gate's direction (growing for "towards the camera", shrinking for "away") and
-     it is not sliding across the frame (a passing vehicle).
+   - the vehicle is **near the gate**: the plate is wide enough (**Minimum plate width**) and it is
+     not sliding across the frame (a passing vehicle). On an **Allow all vehicles** gate its size must
+     also change in the gate's direction (growing for "towards the camera", shrinking for "away");
+     approved registrations open whichever way the vehicle is moving.
 5. The reading must match an enabled approved registration **exactly**. Spaces and dashes are ignored.
    Characters are never substituted (no 0/O or 1/I guessing) and nothing similar is accepted.
 6. Only then, and only with that gate's **Automatic opening** on, the app sends OPEN.

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.6.0
+
+- Approved registrations open whichever way the vehicle is moving; the direction check now applies only to Allow all vehicles gates. Plate width, confidence, matching frames and the passing-vehicle check are unchanged.
+
 ## 2.5.0
 
 - Faster opening: each lane can name a camera motion sensor. Reading starts on motion, which the camera reports 1-6 s before its AI vehicle detection; the video stream also connects earlier. The same plate, confidence and direction rules decide, and motion with no plate read is not logged.

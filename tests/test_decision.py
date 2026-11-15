@@ -68,6 +68,14 @@ def test_away_lane_accepts_shrinking_and_rejects_growing_plates():
     assert evaluate(frames([read("ABC123", 100)], [read("ABC123", 130)]), away).reason == "wrong_direction"
 
 
+def test_unchecked_direction_accepts_either_way_but_still_rejects_passing():
+    either = Rules(min_confidence=0.9, min_consistent=2, min_plate_width=60, check_direction=False)
+    assert evaluate(frames([read("ABC123", 160)], [read("ABC123", 130)]), either).accepted
+    assert evaluate(frames([read("ABC123", 100)], [read("ABC123", 130)]), either).accepted
+    passing = frames([read("ABC123", 100, cx=800)], [read("ABC123", 102, cx=2200)])
+    assert evaluate(passing, either).reason == "passing"
+
+
 def test_passing_vehicle_rejected():
     v = evaluate(frames([read("ABC123", 100, cx=800)], [read("ABC123", 102, cx=2200)]), RULES)
     assert not v.accepted and v.reason == "passing"

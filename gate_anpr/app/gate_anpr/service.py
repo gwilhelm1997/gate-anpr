@@ -43,7 +43,9 @@ class LaneRuntime:
 
     def rules(self) -> Rules:
         s = self.lane
-        return Rules(s.min_confidence / 100, s.min_consistent, s.min_plate_width, s.direction)
+        # Approved plates open in either direction; only allow-all lanes need the direction to exclude traffic.
+        return Rules(s.min_confidence / 100, s.min_consistent, s.min_plate_width, s.direction,
+                     check_direction=s.access == "all")
 
 
 class GateAnpr:

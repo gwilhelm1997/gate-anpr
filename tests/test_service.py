@@ -147,8 +147,14 @@ async def test_blurred_plate_is_rejected(make, fake_ha):
     assert event["reason"] == "low_confidence" and not fake_ha.calls
 
 
-async def test_wrong_direction_is_rejected(make, fake_ha):
+async def test_approved_plate_opens_in_either_direction(make, fake_ha):
     event = await make([b"near", b"far"], auto_open=True).run_session(1, test=False)
+    assert event["result"] == "granted"
+
+
+async def test_allow_all_lane_rejects_wrong_direction(make, fake_ha):
+    svc = make([b"near", b"far"], auto_open=True, lanes=[lane_data(access="all")])
+    event = await svc.run_session(1, test=False)
     assert event["reason"] == "wrong_direction" and not fake_ha.calls
 
 
