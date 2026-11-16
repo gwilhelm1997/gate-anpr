@@ -154,8 +154,11 @@ class StreamReader:
                     pending, live = list(gop), True
                 else:
                     pending = [packet]
-                frames = [f for p in pending for f in p.decode()]
-                if len(pending) > 1 and frames:  # catching up: the keyframe now, then the newest
-                    self._publish(frames[0])
-                for frame in frames[-1:]:
-                    self._publish(frame)
+                newest = None
+                for i, pkt in enumerate(pending):  # catching up: hand out the keyframe at once, then the newest
+                    for frame in pkt.decode():
+                        newest = frame
+                        if i == 0 and len(pending) > 1:
+                            self._publish(frame)
+                if newest is not None:
+                    self._publish(newest)

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.8.1
+
+- The keyframe is handed out as soon as it is decoded, before the stream catches up to the newest frame.
+
 ## 2.8.0
 
 - Video stream stays connected (cameras with a stream only; battery cameras still use snapshots). While idle it only keeps the packets since the last keyframe, undecoded, so it costs almost no CPU; a read gets a current frame at once instead of waiting about 2 s to reconnect.
