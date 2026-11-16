@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace
 
 import pytest
 
@@ -136,10 +137,22 @@ async def test_plate_limited_to_other_gate_is_rejected(make, fake_ha):
 
 async def test_lanes_sharing_a_gate_share_its_cooldown(make, fake_ha):
     svc = make([b"far", b"near", b"far", b"near"], auto_open=True, lanes=[
-        lane_data(), lane_data("Second camera", RELAY, "binary_sensor.gate2_cam_vehicle")])
+        lane_data(cooldown=60), lane_data("Second camera", RELAY, "binary_sensor.gate2_cam_vehicle", cooldown=60)])
+    svc.options = replace(svc.options, repeat_window=0)
     assert (await svc.run_session(1, False))["reason"] == "opened"
     assert (await svc.run_session(2, False))["reason"] == "cooldown"
     assert len(fake_ha.calls) == 1
+
+
+async def test_same_car_is_not_reopened_within_repeat_window(make, fake_ha):
+    svc = make([b"far", b"near", b"far", b"near", b"stranger_far", b"stranger"], auto_open=True, lanes=[
+        lane_data(cooldown=0, access="all"),
+        lane_data("Second camera", RELAY, "binary_sensor.gate2_cam_vehicle", cooldown=0, access="all")])
+    assert (await svc.run_session(1, False))["reason"] == "opened"
+    repeat = await svc.run_session(2, False)  # same car seen by the other camera at this gate
+    assert repeat["result"] == "repeat" and len(svc.store.events()) == 1
+    assert (await svc.run_session(1, False))["plate"] == "ZZZ999"  # a different car still opens at once
+    assert len(fake_ha.calls) == 2
 
 
 async def test_blurred_plate_is_rejected(make, fake_ha):
@@ -281,3 +294,31 @@ async def test_vehicle_trigger_during_unsuccessful_motion_read_reads_again(make,
     assert second is None and calls == [True, False]
     assert first["result"] == "granted" and fake_ha.calls == [("switch", "turn_on", RELAY)]
     assert len(svc.store.events()) == 1  # the empty motion read is not logged
+
+
+def chars(text, weak=None, conf=0.99, low=0.5):
+    return tuple(low if i == weak else conf for i in range(len(text)))
+
+
+def misread(text, weak, width=110):
+    return PlateRead(text, text, 0.5, 0.9, (1800, 1400, 1800 + width, 1400 + width // 4), chars(text, weak))
+
+
+def test_character_vote_combines_frames_that_each_doubt_a_different_character():
+    from gate_anpr.decision import Frame, Rules, evaluate
+    frames = [Frame(i, i * 0.5, 3840, 2160, [r]) for i, r in enumerate(
+        [misread("NBR594", 5), misread("NBR591", 5, 115), misread("VBR594", 0, 120), misread("NBR594", 2, 125)])]
+    verdict = evaluate(frames, Rules(0.9, 2, 60))
+    assert verdict.accepted and verdict.reason == "character_vote" and verdict.plate == "NBR594"
+
+
+def test_character_vote_never_guesses_a_doubtful_character():
+    from gate_anpr.decision import Frame, Rules, evaluate
+    # Position 6 is only ever read confidently once: not enough to decide.
+    frames = [Frame(i, i * 0.5, 3840, 2160, [r]) for i, r in enumerate(
+        [misread("NBR594", 5), misread("NBR591", 5, 115), misread("NBR594", 1, 120)])]
+    assert not evaluate(frames, Rules(0.9, 2, 60)).accepted
+    # Two confident readings each of different characters at one position: a conflict, never a guess.
+    conflict = [Frame(i, i * 0.5, 3840, 2160, [r]) for i, r in enumerate(
+        [misread("NBR594", 0), misread("NBR594", 1), misread("NBR591", 2), misread("NBR591", 3)])]
+    assert not evaluate(conflict, Rules(0.9, 2, 60)).accepted

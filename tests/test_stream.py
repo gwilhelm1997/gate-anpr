@@ -5,7 +5,7 @@ import numpy as np
 
 from gate_anpr.decision import PlateRead
 from gate_anpr.store import Lane
-from gate_anpr.stream import StreamReader, redact
+from gate_anpr.stream import StreamReader, redact, to_image
 from test_service import lane_data, make  # noqa: F401, F811 - pytest fixture reuse
 
 
@@ -32,7 +32,24 @@ def test_on_demand_reader_connects_only_when_active_and_starts_at_a_keyframe(tmp
         assert reader.info()["state"] == "idle" and reader.latest(0) is None  # nothing fetched while idle
         seq = reader.activate()
         item = reader.next_frame(seq, 10)
-        assert item is not None and item[2].shape == (240, 320, 3)
+        assert item is not None and to_image(item[2]).shape == (240, 320, 3)
+    finally:
+        reader.deactivate()
+        reader.close()
+
+
+def test_persistent_reader_stays_connected_without_decoding_until_a_read(tmp_path):
+    path = tmp_path / "gate.mp4"
+    clip(path, frames=250, gop=10)
+    reader = StreamReader(str(path), "test", linger=0, persistent=True)
+    try:
+        deadline = time.monotonic() + 5
+        while not reader.connected and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert reader.info()["state"] == "standby" and reader.latest(0) is None  # connected, nothing decoded
+        seq = reader.activate()
+        item = reader.next_frame(seq, 5)
+        assert item is not None and to_image(item[2]).shape == (240, 320, 3)
     finally:
         reader.deactivate()
         reader.close()

@@ -33,6 +33,7 @@ LIMITS = {
     "region_right": (0, 100),
     "region_bottom": (0, 100),
     "parked_minutes": (0, 120),
+    "capture_window": (2, 15),
 }
 # Settings that are also native Home Assistant controls.
 CONTROL_KEYS = ["enabled", "auto_open", *LIMITS]
@@ -65,6 +66,7 @@ class Lane:
     region_bottom: int = 100
     exclusions: str = ""  # rectangles where plates are always ignored (parking spots, the road)
     parked_minutes: int = 2  # a plate seen at the same spot this long ago is parked; 0 = off
+    capture_window: int = 8  # seconds to keep trying; shorter for slow battery cameras
 
     @classmethod
     def coerce(cls, key: str, value):

@@ -1,7 +1,10 @@
-"""On-demand RTSP reader: connects when a vehicle is detected, disconnects after a quiet period.
+"""RTSP reader for fast recognition.
 
-No traffic or decoding while no vehicle is present. During a session every frame is decoded, starting
-at the first keyframe (P-frames need every earlier frame, so earlier ones would be smeared).
+On demand (default): connects when a vehicle is detected and disconnects after a quiet period.
+Persistent: stays connected but only keeps the packets since the last keyframe, undecoded, so idling
+costs almost no CPU. When a session starts, that short group of pictures is decoded at once, giving a
+current frame immediately instead of after a reconnect and a wait for the next keyframe.
+Frames are handed out undecoded-to-RGB; `to_image` converts only the ones that are actually read.
 """
 
 import logging
@@ -14,6 +17,12 @@ import av
 _LOG = logging.getLogger(__name__)
 _CREDENTIALS = re.compile(r"//[^@/]+@")
 LINGER = 30.0  # stay connected this long after a session, for the next vehicle
+MAX_GOP = 600  # packets kept while idle; a camera keyframe interval is far shorter
+
+
+def to_image(frame):
+    """BGR ndarray for a stream frame (anything else, e.g. an ndarray or JPEG, is returned as is)."""
+    return frame.to_ndarray(format="bgr24") if isinstance(frame, av.VideoFrame) else frame
 
 
 def redact(url: str) -> str:
@@ -21,10 +30,11 @@ def redact(url: str) -> str:
 
 
 class StreamReader:
-    def __init__(self, url: str, name: str, linger: float = LINGER):
+    def __init__(self, url: str, name: str, linger: float = LINGER, persistent: bool = False):
         self.url = url
         self.name = name
         self.linger = linger
+        self.persistent = persistent
         self._cond = threading.Condition()
         self._frame = None  # (monotonic time, seq, BGR ndarray)
         self._seq = 0
@@ -36,9 +46,14 @@ class StreamReader:
         self.last_error: str | None = None
         self._thread = threading.Thread(target=self._run, name=f"stream-{name}", daemon=True)
         self._thread.start()
+        if persistent:
+            self._wake.set()
 
     def info(self) -> dict:
-        state = "streaming" if self.connected else ("connecting" if self._active else "idle")
+        if self.connected:
+            state = "streaming" if self._decoding() else "standby"
+        else:
+            state = "connecting" if self._active or self.persistent else "idle"
         return {"state": state, "connected": self.connected, "error": self.last_error, "source": redact(self.url)}
 
     def activate(self) -> int:
@@ -80,9 +95,18 @@ class StreamReader:
         with self._cond:
             self._cond.notify_all()
 
-    def _wanted(self) -> bool:
+    def _decoding(self) -> bool:
         with self._cond:
             return self._active > 0 or time.monotonic() - self._released < self.linger
+
+    def _wanted(self) -> bool:
+        return self.persistent or self._decoding()
+
+    def _publish(self, frame) -> None:
+        with self._cond:
+            self._seq += 1
+            self._frame = (time.monotonic(), self._seq, frame)
+            self._cond.notify_all()
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -105,20 +129,33 @@ class StreamReader:
                      timeout=10) as container:
             video = container.streams.video[0]
             video.thread_type = "AUTO"
-            video.codec_context.skip_frame = "NONKEY"
             self.connected, self.last_error = True, None
             _LOG.info("%s: video stream connected", self.name)
-            started = False
+            gop: list = []  # packets from the last keyframe on, not yet decoded
+            live = False
             for packet in container.demux(video):
                 if self._stop.is_set() or not self._wanted():
                     _LOG.info("%s: video stream disconnected (idle)", self.name)
                     return
-                if not started and packet.is_keyframe:
-                    started = True
-                    video.codec_context.skip_frame = "DEFAULT"
-                for frame in packet.decode():
-                    image = frame.to_ndarray(format="bgr24")
-                    with self._cond:
-                        self._seq += 1
-                        self._frame = (time.monotonic(), self._seq, image)
-                        self._cond.notify_all()
+                if packet.dts is None:
+                    continue  # flush packet
+                if packet.is_keyframe:
+                    gop = [packet]
+                elif gop:
+                    gop.append(packet)
+                    if len(gop) > MAX_GOP:
+                        gop = []  # never start mid-group: wait for the next keyframe
+                if not self._decoding():
+                    live = False
+                    continue
+                if not live:
+                    if not gop:
+                        continue  # P-frames need their keyframe; wait for one
+                    pending, live = list(gop), True
+                else:
+                    pending = [packet]
+                frames = [f for p in pending for f in p.decode()]
+                if len(pending) > 1 and frames:  # catching up: the keyframe now, then the newest
+                    self._publish(frames[0])
+                for frame in frames[-1:]:
+                    self._publish(frame)

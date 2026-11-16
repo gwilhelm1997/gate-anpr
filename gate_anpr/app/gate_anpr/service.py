@@ -12,7 +12,7 @@ from .mqtt import LANE_CONTROLS, LEGACY_KEYS, RECENT_SLOTS, MqttBridge, discover
 from .recognition import RecognitionEngine, Region
 from .parked import ParkedFilter
 from .store import Lane, Store
-from .stream import StreamReader
+from .stream import StreamReader, to_image
 
 _LOG = logging.getLogger(__name__)
 EVENT_TYPE = "gate_anpr_access"
@@ -26,6 +26,7 @@ class Options:
     parallel_snapshots: int = 2
     confirm_timeout: float = 20.0
     retention_days: int = 30
+    repeat_window: float = 30.0  # after an opening, the same plate at the same gate is ignored this long
 
 
 class LaneRuntime:
@@ -59,6 +60,7 @@ class GateAnpr:
         self._gates: dict[str, GateController] = {}  # shared by lanes that drive the same gate
         self._streams: dict[int, StreamReader] = {}
         self._gate_poll = gate_poll
+        self._opened: dict[tuple[str, str], float] = {}  # (gate, plate) -> when it was last opened for
         self._clock = time.monotonic
         self.on_lanes_changed = None  # set by the app: resubscribe triggers, refresh dashboard
         self.load_lanes()
@@ -81,7 +83,9 @@ class GateAnpr:
                 del self._streams[lane_id]
         for lane_id, rt in self.lanes.items():
             if rt.lane.stream_url and lane_id not in self._streams:
-                self._streams[lane_id] = StreamReader(rt.lane.stream_url, rt.lane.name)
+                # Always connected, decoding only during a read: no reconnect delay when a car arrives.
+                self._streams[lane_id] = StreamReader(rt.lane.stream_url, rt.lane.name, linger=3,
+                                                      persistent=True)
 
     def stream_info(self, lane_id: int) -> dict | None:
         reader = self._streams.get(lane_id)
@@ -290,11 +294,19 @@ class GateAnpr:
         elif not (self.mqtt and self.mqtt.connected):
             result, reason, detail = ("approved_not_opened", "controls_offline",
                                       "dashboard controls unreachable; automatic opening needs MQTT")
+        elif self._clock() - self._opened.get((lane.gate_entity, verdict.plate), -1e9) < self.options.repeat_window:
+            # The same car, still in view or read by the other camera at this gate: already let in.
+            _LOG.info("%s: %s already opened for in the last %.0f s; not repeated", lane.name, verdict.plate,
+                      self.options.repeat_window)
+            return {"ts": started_wall, "lane_id": lane.id, "plate": verdict.plate, "result": "repeat",
+                    "reason": "recently_opened", "detail": {"verdict": asdict(verdict)}}
         else:
             decided = self._clock() - started
             gate_result, detail = await self.gate(lane).open(lane.cooldown)
             result = "granted" if gate_result in ("opened", "already_open") else "approved_not_opened"
             reason = gate_result
+            if result == "granted":
+                self._opened[(lane.gate_entity, verdict.plate)] = self._clock()
         if allowed and not approved and not error:
             detail = (detail + "; " if detail else "") + "allowed by the lane's allow-all setting"
 
@@ -345,6 +357,7 @@ class GateAnpr:
         frames flow, takes over (no ~1.2 s wait per frame). Frames are judged in capture order."""
         lane = rt.lane
         exclusions = lane.exclusion_boxes()
+        window = min(self.options.capture_window, lane.capture_window)
         reader = self._streams.get(lane.id)
         seq = reader.activate() if reader else 0
         queue: asyncio.Queue = asyncio.Queue()
@@ -353,7 +366,7 @@ class GateAnpr:
 
         async def grabber(offset: float) -> None:
             await asyncio.sleep(offset)
-            while not done.is_set() and self._clock() - started < self.options.capture_window:
+            while not done.is_set() and self._clock() - started < window:
                 shot_at = self._clock()
                 try:
                     await queue.put((shot_at, await self.ha.camera_image(lane.camera_entity)))
@@ -367,7 +380,7 @@ class GateAnpr:
         grabbers = [asyncio.create_task(grabber(i * stagger)) for i in range(parallel)]
         try:
             while len(frames) < self.options.max_frames:
-                if self._clock() - started >= self.options.capture_window and queue.empty():
+                if self._clock() - started >= window and queue.empty():
                     break
                 item = reader.latest(seq) if reader else None
                 if item is not None:
@@ -382,13 +395,15 @@ class GateAnpr:
                     try:
                         shot_at, image = await asyncio.wait_for(queue.get(), 0.05 if reader else 3)
                     except asyncio.TimeoutError:
-                        if not reader and self._clock() - started >= self.options.capture_window:
+                        if not reader and self._clock() - started >= window:
                             break
                         continue
                     if isinstance(image, Exception):
                         if reader and reader.connected:
                             continue  # the stream can carry on
                         raise image
+                if not isinstance(image, (bytes, bytearray)):
+                    image = await asyncio.to_thread(to_image, image)  # only frames that are read get converted
                 width, height, reads, ms = await self.engine.recognise(image, region)
                 all_frames.append(Frame(len(all_frames), shot_at - started, width, height, reads))
                 # Parked or excluded vehicles must never be read, nor hide an arriving one.

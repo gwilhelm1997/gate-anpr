@@ -17,6 +17,7 @@ class PlateRead:
     ocr_conf: float  # 0..1, weakest character
     det_conf: float
     box: tuple[int, int, int, int]  # x1, y1, x2, y2 in full-frame pixels
+    chars: tuple[float, ...] = ()  # confidence of each character of `text` (empty if unknown)
 
     @property
     def width(self) -> int:
@@ -71,8 +72,9 @@ def evaluate(frames: list[Frame], rules: Rules) -> Verdict:
     best_guess = max(nearest, key=lambda fr: fr[1].ocr_conf)[1]
     confident = [(f, r) for f, r in nearest if r.ocr_conf >= rules.min_confidence]
     if not confident:
-        return Verdict(False, "low_confidence", plate=best_guess.text or None,
-                       confidence=best_guess.ocr_conf, readings=len(nearest))
+        return _character_vote(nearest, rules) or Verdict(
+            False, "low_confidence", plate=best_guess.text or None, confidence=best_guess.ocr_conf,
+            readings=len(nearest))
 
     valid = [(f, r) for f, r in confident if is_valid_nz(r.text)]
     if not valid:
@@ -87,10 +89,15 @@ def evaluate(frames: list[Frame], rules: Rules) -> Verdict:
                 best_frame=best_f.index, best_box=best_r.box)
 
     if votes < rules.min_consistent:
-        return Verdict(False, "insufficient_frames", **base)
+        return _character_vote(nearest, rules) or Verdict(False, "insufficient_frames", **base)
     if votes <= len(valid) - votes:
-        return Verdict(False, "inconsistent", **base)
+        return _character_vote(nearest, rules) or Verdict(False, "inconsistent", **base)
+    return _checked(agreeing, Verdict(True, "consistent", **base), rules)
 
+
+def _checked(agreeing, verdict: Verdict, rules: Rules) -> Verdict:
+    """Size and passing checks on the frames that support an accepted plate."""
+    base = {k: v for k, v in verdict.__dict__.items() if k not in ("accepted", "reason")}
     (_, r0), (f1, r1) = agreeing[0], agreeing[-1]
     growth = r1.width / max(r0.width, 1)
     lateral = abs(r1.centre_x - r0.centre_x) / max(f1.width, 1)
@@ -102,4 +109,35 @@ def evaluate(frames: list[Frame], rules: Rules) -> Verdict:
     size_change = max(growth, 1 / max(growth, 1e-6))
     if lateral > MAX_LATERAL_SHIFT and size_change < LATERAL_GROWTH_EXCUSE:
         return Verdict(False, "passing", **base)
-    return Verdict(True, "consistent", **base)
+    return Verdict(True, verdict.reason, **base)
+
+
+def _character_vote(nearest, rules: Rules) -> Verdict | None:
+    """Combine frames that each misread or doubted a different character (NBR594, NBR591, VBR594).
+
+    Every character must be read with at least the minimum confidence in at least `min_consistent`
+    frames, and more often than any other confident character at that position, so this is as strict
+    per character as the whole-plate rule is per plate. Returns None when it cannot decide."""
+    reads = [(f, r) for f, r in nearest if r.text and len(r.chars) == len(r.text)]
+    if not reads:
+        return None
+    length, _ = Counter(len(r.text) for _, r in reads).most_common(1)[0]
+    reads = [(f, r) for f, r in reads if len(r.text) == length]
+    plate, weakest = [], 1.0
+    for i in range(length):
+        sure = Counter(r.text[i] for _, r in reads if r.chars[i] >= rules.min_confidence)
+        ranked = sure.most_common(2)
+        if not ranked or ranked[0][1] < rules.min_consistent or (len(ranked) > 1 and ranked[1][1] >= ranked[0][1]):
+            return None
+        char = ranked[0][0]
+        plate.append(char)
+        weakest = min(weakest, max(r.chars[i] for _, r in reads if r.text[i] == char))
+    text = "".join(plate)
+    if not is_valid_nz(text):
+        return None
+    # Frames that read this plate apart from at most one character support it.
+    agreeing = [(f, r) for f, r in reads if sum(a != b for a, b in zip(r.text, text)) <= 1]
+    best_f, best_r = max(agreeing, key=lambda fr: fr[1].area)
+    verdict = Verdict(True, "character_vote", plate=text, votes=len(agreeing), readings=len(reads),
+                      confidence=weakest, best_frame=best_f.index, best_box=best_r.box)
+    return _checked(agreeing, verdict, rules)

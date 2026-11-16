@@ -25,6 +25,9 @@ LANE_ENTITIES: dict[str, tuple[str, dict]] = {
     "min_plate_width": ("number", {"name": "Minimum plate width", "icon": "mdi:arrow-expand-horizontal",
                                    "unit_of_measurement": "px", "min": 20, "max": 800, "step": 5,
                                    "mode": "box", "entity_category": "config"}),
+    "capture_window": ("number", {"name": "Reading time limit", "icon": "mdi:timer-cog-outline",
+                                  "unit_of_measurement": "s", "min": 2, "max": 15, "step": 1, "mode": "box",
+                                  "entity_category": "config"}),
     **{f"region_{side}": ("number", {"name": f"Region {side}", "icon": "mdi:crop", **_PCT})
        for side in ("left", "top", "right", "bottom")},
     "last_plate": ("sensor", {"name": "Last registration", "icon": "mdi:card-text-outline"}),

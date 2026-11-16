@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.8.0
+
+- Video stream stays connected (cameras with a stream only; battery cameras still use snapshots). While idle it only keeps the packets since the last keyframe, undecoded, so it costs almost no CPU; a read gets a current frame at once instead of waiting about 2 s to reconnect.
+- Only the frames that are actually read are converted, and a video frame is cut to the detection area before it goes to the recognition process.
+- Character vote: frames that each doubt a different character (NBR594 / NBR591 / VBR594) are combined. Every character still needs the minimum confidence in the required number of frames and must not be contradicted, so no character is ever guessed.
+- After an opening, the same plate at the same gate is ignored for 30 s (no repeat pulses or log entries); other cars still open at once.
+- Per-lane reading time limit (2-15 s), so a slow battery camera gives up and is ready again sooner.
+
 ## 2.7.2
 
 - "Camera + detection area" opens the gate editor on the camera picture, ready to drag the area and save.

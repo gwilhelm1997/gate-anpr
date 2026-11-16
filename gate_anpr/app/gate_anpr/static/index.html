@@ -131,6 +131,7 @@
     <label>Matching frames required<input type="number" name="min_consistent" required></label>
     <label>Opening cooldown (s)<input type="number" name="cooldown" required></label>
     <label>Minimum plate width (px)<input type="number" name="min_plate_width" required></label>
+    <label>Reading time limit (s, shorter for battery cameras)<input type="number" name="capture_window" required></label>
     <label>Region left (%)<input type="number" name="region_left" required></label>
     <label>Region top (%)<input type="number" name="region_top" required></label>
     <label>Region right (%)<input type="number" name="region_right" required></label>
@@ -161,7 +162,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const cls = (r) => r === "granted" ? "granted" : r.startsWith("approved") ? "approved" : "rejected";
 const DEFAULTS = {name: "", access: "approved", min_confidence: 90, min_consistent: 2, cooldown: 60,
-                  min_plate_width: 60, parked_minutes: 2, exclusions: "", region_left: 0, region_top: 0, region_right: 100, region_bottom: 100};
+                  min_plate_width: 60, parked_minutes: 2, capture_window: 8, exclusions: "", region_left: 0, region_top: 0, region_right: 100, region_bottom: 100};
 let state = {lanes: [], plates: []};
 let approved = new Set();
 let entities = null;

@@ -85,6 +85,9 @@ def _recognise(jpeg: bytes, region: Region) -> dict:
         if res.ocr is None:
             continue
         conf = res.ocr.confidence
+        # Per-character confidence of the kept characters (padding is only trailing, so indices line up).
+        chars = [] if not isinstance(conf, list) else [
+            round(float(c), 4) for ch, c in zip(res.ocr.text, conf) if normalise(ch)]
         # The weakest character decides: one doubtful character means a doubtful plate.
         conf = min(conf) if isinstance(conf, list) else conf
         b = res.detection.bounding_box
@@ -95,6 +98,7 @@ def _recognise(jpeg: bytes, region: Region) -> dict:
                 "ocr_conf": round(float(conf or 0.0), 4),
                 "det_conf": round(float(res.detection.confidence), 4),
                 "box": (b.x1 + x1, b.y1 + y1, b.x2 + x1, b.y2 + y1),
+                "chars": chars if len(chars) == len(normalise(res.ocr.text)) else [],
             }
         )
     return {
@@ -215,12 +219,24 @@ class RecognitionEngine:
             self.last_error = f"engine start failed: {err}"
             _LOG.exception("Recognition engine failed to start")
 
-    async def recognise(self, jpeg: bytes, region: Region) -> tuple[int, int, list[PlateRead], int]:
+    async def recognise(self, jpeg, region: Region) -> tuple[int, int, list[PlateRead], int]:
+        """jpeg: snapshot bytes or a decoded video frame. A video frame is cut to the detection area
+        here, so only that part is copied to the recognition process."""
+        dx = dy = 0
+        size = None
+        if not isinstance(jpeg, (bytes, bytearray)):
+            height, width = jpeg.shape[:2]
+            x1, y1, x2, y2 = region.pixels(width, height)
+            if (x1, y1, x2, y2) != (0, 0, width, height):
+                jpeg, region, dx, dy, size = jpeg[y1:y2, x1:x2].copy(), Region(), x1, y1, (width, height)
         out = await self._run(_recognise, jpeg, region)
         self.ready = True
-        reads = [PlateRead(r["text"], r["raw"], r["ocr_conf"], r["det_conf"], tuple(r["box"]))
+        reads = [PlateRead(r["text"], r["raw"], r["ocr_conf"], r["det_conf"],
+                           (r["box"][0] + dx, r["box"][1] + dy, r["box"][2] + dx, r["box"][3] + dy),
+                           tuple(r["chars"]))
                  for r in out["reads"]]
-        return out["width"], out["height"], reads, out["ms"]
+        width, height = size or (out["width"], out["height"])
+        return width, height, reads, out["ms"]
 
     async def annotate(self, jpeg: bytes, box, label: str, region: Region,
                        max_width: int = 1280, exclusions=()) -> tuple[bytes, bytes | None]:
