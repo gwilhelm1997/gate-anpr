@@ -32,9 +32,19 @@ def test_stationary_vehicle_at_gate_is_accepted():
     assert evaluate(frames([read("ABC123", 150)], [read("ABC123", 149)]), RULES).accepted
 
 
-def test_single_frame_is_never_enough():
+def test_single_ordinary_frame_is_not_enough():
     v = evaluate(frames([read("ABC123")]), RULES)
     assert not v.accepted and v.reason == "insufficient_frames"
+
+
+def test_single_near_certain_read_is_accepted():
+    v = evaluate(frames([read("ABC123", conf=0.999)], [], []), RULES)
+    assert v.accepted and v.reason == "single_confident"
+
+
+def test_single_near_certain_read_with_a_rival_plate_is_rejected():
+    v = evaluate(frames([read("ABC123", conf=0.999)], [read("XYZ789", conf=0.999)]), RULES)
+    assert not v.accepted
 
 
 def test_disagreeing_frames_are_rejected():

@@ -1,5 +1,9 @@
 # Changelog
 
+
+## 2.8.2
+
+- A single read at 99% or higher with no other plate in view now opens the gate, instead of waiting for a second frame that often never came.
 ## 2.8.1
 
 - The keyframe is handed out as soon as it is decoded, before the stream catches up to the newest frame.

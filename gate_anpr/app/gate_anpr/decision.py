@@ -46,6 +46,7 @@ class Rules:
     min_confidence: float = 0.90
     min_consistent: int = 2
     min_plate_width: int = 60
+    single_read_confidence: float = 0.99
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,9 @@ def evaluate(frames: list[Frame], rules: Rules) -> Verdict:
                 best_frame=best_f.index, best_box=best_r.box)
 
     if votes < rules.min_consistent:
+        # A near-certain read with no rival is enough: the plate often leaves the region after one frame.
+        if votes == len(valid) and confidence >= rules.single_read_confidence:
+            return _checked(agreeing, Verdict(True, "single_confident", **base), rules)
         return _character_vote(nearest, rules) or Verdict(False, "insufficient_frames", **base)
     if votes <= len(valid) - votes:
         return _character_vote(nearest, rules) or Verdict(False, "inconsistent", **base)
